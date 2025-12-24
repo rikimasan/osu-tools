@@ -1,7 +1,6 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
-using System;
 using osu.Framework.Allocation;
 using osu.Framework.Extensions;
 using osu.Framework.Graphics;
@@ -9,43 +8,49 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Cursor;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Graphics.UserInterface;
+using osu.Framework.Input.Events;
+using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Overlays;
+using osu.Game.Overlays.Toolbar;
 using osu.Game.Rulesets.Osu.Difficulty;
 using osuTK;
 using PerformanceCalculatorGUI.Components.TextBoxes;
+using PerformanceCalculatorGUI.Configuration;
 
-namespace PerformanceCalculatorGUI.Screens.Profile
+namespace PerformanceCalculatorGUI.Components
 {
-    public partial class ProfileTuningButton : RoundedButton, IHasPopover
+    public partial class OsuDifficultyTuningButton : ToolbarButton, IHasPopover
     {
-        private readonly Func<OsuDifficultyTuning> getTuning;
-        private readonly Action<OsuDifficultyTuning> applyTuning;
+        protected override Anchor TooltipAnchor => Anchor.TopRight;
 
-        public ProfileTuningButton(Func<OsuDifficultyTuning> getTuning, Action<OsuDifficultyTuning> applyTuning)
+        public OsuDifficultyTuningButton()
         {
-            this.getTuning = getTuning;
-            this.applyTuning = applyTuning;
-
-            Text = "Parameters";
-            Action = this.ShowPopover;
+            TooltipMain = "Tuning";
+            SetIcon(new ScreenSelectionButtonIcon());
         }
 
-        public Popover GetPopover() => new ProfileCalculationPopover(getTuning(), applyTuning);
+        public Popover GetPopover() => new OsuDifficultyTuningPopover();
+
+        protected override bool OnClick(ClickEvent e)
+        {
+            this.ShowPopover();
+            return base.OnClick(e);
+        }
     }
 
-    public partial class ProfileCalculationPopover : OsuPopover
+    public partial class OsuDifficultyTuningPopover : OsuPopover
     {
         private const double tuning_min_value = 0.0;
         private const double tuning_max_value = double.MaxValue;
 
-        private readonly Action<OsuDifficultyTuning> applyTuning;
-        private readonly OsuDifficultyTuning initialTuning;
-
         [Resolved]
         private OverlayColourProvider colourProvider { get; set; } = null!;
+
+        [Resolved]
+        private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
 
         private LimitedLabelledFractionalNumberBox aimPerformanceScaleTextBox = null!;
         private LimitedLabelledFractionalNumberBox speedPerformanceScaleTextBox = null!;
@@ -79,16 +84,16 @@ namespace PerformanceCalculatorGUI.Screens.Profile
         private LimitedLabelledFractionalNumberBox speedBalancingFactorTextBox = null!;
         private LimitedLabelledFractionalNumberBox speedDistanceScaleTextBox = null!;
 
-        public ProfileCalculationPopover(OsuDifficultyTuning initialTuning, Action<OsuDifficultyTuning> applyTuning)
+        public OsuDifficultyTuningPopover()
             : base(false)
         {
-            this.initialTuning = initialTuning;
-            this.applyTuning = applyTuning;
         }
 
         [BackgroundDependencyLoader]
         private void load()
         {
+            var initialTuning = tuningManager.Current.Value;
+
             Child = new Container
             {
                 Size = new Vector2(560, 650),
@@ -106,8 +111,8 @@ namespace PerformanceCalculatorGUI.Screens.Profile
                         {
                             new OsuSpriteText
                             {
-                                Font = new FontUsage(size: 18, weight: "SemiBold"),
-                                Text = "Profile calculation tuning"
+                                Font = OsuFont.Torus.With(size: 18, weight: FontWeight.SemiBold),
+                                Text = "Difficulty tuning"
                             },
                             new OsuSpriteText
                             {
@@ -117,7 +122,7 @@ namespace PerformanceCalculatorGUI.Screens.Profile
                             new OsuSpriteText
                             {
                                 Margin = new MarginPadding { Top = 6f },
-                                Font = new FontUsage(size: 14, weight: "SemiBold"),
+                                Font = OsuFont.Torus.With(size: 14, weight: FontWeight.SemiBold),
                                 Text = "Performance scales"
                             },
                             new GridContainer
@@ -153,7 +158,7 @@ namespace PerformanceCalculatorGUI.Screens.Profile
                             new OsuSpriteText
                             {
                                 Margin = new MarginPadding { Top = 6f },
-                                Font = new FontUsage(size: 14, weight: "SemiBold"),
+                                Font = OsuFont.Torus.With(size: 14, weight: FontWeight.SemiBold),
                                 Text = "Skill strain scales"
                             },
                             new GridContainer
@@ -183,7 +188,7 @@ namespace PerformanceCalculatorGUI.Screens.Profile
                             new OsuSpriteText
                             {
                                 Margin = new MarginPadding { Top = 6f },
-                                Font = new FontUsage(size: 14, weight: "SemiBold"),
+                                Font = OsuFont.Torus.With(size: 14, weight: FontWeight.SemiBold),
                                 Text = "Aim bonuses"
                             },
                             new GridContainer
@@ -219,7 +224,7 @@ namespace PerformanceCalculatorGUI.Screens.Profile
                             new OsuSpriteText
                             {
                                 Margin = new MarginPadding { Top = 6f },
-                                Font = new FontUsage(size: 14, weight: "SemiBold"),
+                                Font = OsuFont.Torus.With(size: 14, weight: FontWeight.SemiBold),
                                 Text = "Flashlight bonuses"
                             },
                             new GridContainer
@@ -255,7 +260,7 @@ namespace PerformanceCalculatorGUI.Screens.Profile
                             new OsuSpriteText
                             {
                                 Margin = new MarginPadding { Top = 6f },
-                                Font = new FontUsage(size: 14, weight: "SemiBold"),
+                                Font = OsuFont.Torus.With(size: 14, weight: FontWeight.SemiBold),
                                 Text = "Rhythm tuning"
                             },
                             new GridContainer
@@ -285,7 +290,7 @@ namespace PerformanceCalculatorGUI.Screens.Profile
                             new OsuSpriteText
                             {
                                 Margin = new MarginPadding { Top = 6f },
-                                Font = new FontUsage(size: 14, weight: "SemiBold"),
+                                Font = OsuFont.Torus.With(size: 14, weight: FontWeight.SemiBold),
                                 Text = "Speed tuning"
                             },
                             new GridContainer
@@ -346,7 +351,7 @@ namespace PerformanceCalculatorGUI.Screens.Profile
 
         private void apply()
         {
-            applyTuning(new OsuDifficultyTuning
+            tuningManager.Current.Value = new OsuDifficultyTuning
             {
                 AimPerformanceScale = aimPerformanceScaleTextBox.Value.Value,
                 SpeedPerformanceScale = speedPerformanceScaleTextBox.Value.Value,
@@ -374,7 +379,7 @@ namespace PerformanceCalculatorGUI.Screens.Profile
                 SpeedMinBonusBpm = speedMinBonusBpmTextBox.Value.Value,
                 SpeedBalancingFactor = speedBalancingFactorTextBox.Value.Value,
                 SpeedDistanceScale = speedDistanceScaleTextBox.Value.Value
-            });
+            };
 
             this.HidePopover();
         }

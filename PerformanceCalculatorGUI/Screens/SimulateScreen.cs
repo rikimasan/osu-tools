@@ -123,10 +123,9 @@ namespace PerformanceCalculatorGUI.Screens
 
         private BufferedContainer? background;
 
-        private OsuDifficultyTuning osuDifficultyTuning = OsuDifficultyTuning.Default;
-
         private ScheduledDelegate? debouncedPerformanceUpdate;
         private ScheduledDelegate? debouncedTuningUpdate;
+        private bool isUpdatingTuningFromManager;
 
         [Resolved]
         private NotificationDisplay notificationDisplay { get; set; } = null!;
@@ -151,6 +150,9 @@ namespace PerformanceCalculatorGUI.Screens
 
         [Resolved]
         private APIManager apiManager { get; set; } = null!;
+
+        [Resolved]
+        private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
 
         [Cached]
         private OverlayColourProvider colourProvider = new OverlayColourProvider(OverlayColourScheme.Blue);
@@ -184,7 +186,7 @@ namespace PerformanceCalculatorGUI.Screens
         [BackgroundDependencyLoader]
         private void load(OsuColour osuColour)
         {
-            var defaultTuning = OsuDifficultyTuning.Default;
+            var defaultTuning = tuningManager.Current.Value;
 
             InternalChildren = new Drawable[]
             {
@@ -804,6 +806,7 @@ namespace PerformanceCalculatorGUI.Screens
             comboTextBox.Value.BindValueChanged(_ => debouncedCalculatePerformance());
             scoreTextBox.Value.BindValueChanged(_ => debouncedCalculatePerformance());
             bindTuningEvents();
+            tuningManager.Current.BindValueChanged(tuning => applyOsuDifficultyTuningFromManager(tuning.NewValue), true);
 
             fullScoreDataSwitch.Current.BindValueChanged(val => updateAccuracyParams(val.NewValue));
 
@@ -957,12 +960,13 @@ namespace PerformanceCalculatorGUI.Screens
             if (working is null)
                 return;
 
+            var tuning = tuningManager.Current.Value;
             var rulesetInstance = ruleset.Value.ShortName == "osu"
-                ? new OsuRuleset(osuDifficultyTuning)
+                ? new OsuRuleset(tuning)
                 : ruleset.Value.CreateInstance();
 
             difficultyCalculator.Value = RulesetHelper.GetExtendedDifficultyCalculator(ruleset.Value, working,
-                ruleset.Value.ShortName == "osu" ? osuDifficultyTuning : null);
+                ruleset.Value.ShortName == "osu" ? tuning : null);
             performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
         }
 
@@ -1221,13 +1225,19 @@ namespace PerformanceCalculatorGUI.Screens
 
         private void debouncedApplyOsuDifficultyTuning()
         {
+            if (isUpdatingTuningFromManager)
+                return;
+
             debouncedTuningUpdate?.Cancel();
             debouncedTuningUpdate = Scheduler.AddDelayed(applyOsuDifficultyTuning, 50);
         }
 
         private void applyOsuDifficultyTuning()
         {
-            updateOsuDifficultyTuningFromInputs();
+            var tuning = createOsuDifficultyTuningFromInputs();
+
+            if (!tuning.Equals(tuningManager.Current.Value))
+                tuningManager.Current.Value = tuning;
 
             if (ruleset.Value.ShortName != "osu" || working == null)
                 return;
@@ -1237,9 +1247,53 @@ namespace PerformanceCalculatorGUI.Screens
             calculatePerformance();
         }
 
-        private void updateOsuDifficultyTuningFromInputs()
+        private void applyOsuDifficultyTuningFromManager(OsuDifficultyTuning tuning)
         {
-            osuDifficultyTuning = new OsuDifficultyTuning
+            isUpdatingTuningFromManager = true;
+            setTuningValue(aimPerformanceScaleTextBox, tuning.AimPerformanceScale);
+            setTuningValue(speedPerformanceScaleTextBox, tuning.SpeedPerformanceScale);
+            setTuningValue(accuracyPerformanceScaleTextBox, tuning.AccuracyPerformanceScale);
+            setTuningValue(flashlightPerformanceScaleTextBox, tuning.FlashlightPerformanceScale);
+            setTuningValue(totalPerformanceScaleTextBox, tuning.TotalPerformanceScale);
+
+            setTuningValue(aimSkillStrainScaleTextBox, tuning.AimSkillStrainScale);
+            setTuningValue(speedSkillStrainScaleTextBox, tuning.SpeedSkillStrainScale);
+            setTuningValue(flashlightSkillStrainScaleTextBox, tuning.FlashlightSkillStrainScale);
+
+            setTuningValue(aimWideAngleBonusScaleTextBox, tuning.AimWideAngleBonusScale);
+            setTuningValue(aimAcuteAngleScaleTextBox, tuning.AimAcuteAngleScale);
+            setTuningValue(aimSliderBonusScaleTextBox, tuning.AimSliderBonusScale);
+            setTuningValue(aimVelocityChangeBonusScaleTextBox, tuning.AimVelocityChangeBonusScale);
+            setTuningValue(aimWiggleBonusScaleTextBox, tuning.AimWiggleBonusScale);
+
+            setTuningValue(flashlightMaxOpacityBonusScaleTextBox, tuning.FlashlightMaxOpacityBonusScale);
+            setTuningValue(flashlightHiddenBonusScaleTextBox, tuning.FlashlightHiddenBonusScale);
+            setTuningValue(flashlightMinVelocityScaleTextBox, tuning.FlashlightMinVelocityScale);
+            setTuningValue(flashlightSliderBonusScaleTextBox, tuning.FlashlightSliderBonusScale);
+            setTuningValue(flashlightMinAngleScaleTextBox, tuning.FlashlightMinAngleScale);
+
+            setTuningValue(rhythmHistoryTimeMaxTextBox, tuning.RhythmHistoryTimeMax);
+            setTuningValue(rhythmHistoryObjectsMaxTextBox, tuning.RhythmHistoryObjectsMax);
+            setTuningValue(rhythmOverallScaleTextBox, tuning.RhythmOverallScale);
+            setTuningValue(rhythmRatioScaleTextBox, tuning.RhythmRatioScale);
+
+            setTuningValue(speedSingleSpacingThresholdTextBox, tuning.SpeedSingleSpacingThreshold);
+            setTuningValue(speedMinBonusBpmTextBox, tuning.SpeedMinBonusBpm);
+            setTuningValue(speedBalancingFactorTextBox, tuning.SpeedBalancingFactor);
+            setTuningValue(speedDistanceScaleTextBox, tuning.SpeedDistanceScale);
+            isUpdatingTuningFromManager = false;
+
+            if (ruleset.Value.ShortName != "osu" || working == null)
+                return;
+
+            createCalculators();
+            calculateDifficulty();
+            calculatePerformance();
+        }
+
+        private OsuDifficultyTuning createOsuDifficultyTuningFromInputs()
+        {
+            return new OsuDifficultyTuning
             {
                 AimPerformanceScale = aimPerformanceScaleTextBox.Value.Value,
                 SpeedPerformanceScale = speedPerformanceScaleTextBox.Value.Value,

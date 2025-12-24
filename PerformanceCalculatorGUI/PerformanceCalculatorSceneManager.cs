@@ -128,6 +128,7 @@ namespace PerformanceCalculatorGUI
                                             Children = new Drawable[]
                                             {
                                                 rulesetSelector = new ToolbarRulesetSelector(),
+                                                new OsuDifficultyTuningButton(),
                                                 new SettingsButton()
                                             }
                                         },

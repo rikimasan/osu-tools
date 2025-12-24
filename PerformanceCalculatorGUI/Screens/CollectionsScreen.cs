@@ -24,6 +24,7 @@ using osu.Game.Overlays;
 using osu.Game.Overlays.Dialog;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Mods;
+using osu.Game.Rulesets.Osu;
 using osuTK;
 using PerformanceCalculatorGUI.Components;
 using PerformanceCalculatorGUI.Configuration;
@@ -52,6 +53,9 @@ namespace PerformanceCalculatorGUI.Screens
 
         [Resolved]
         private NotificationDisplay notificationDisplay { get; set; } = null!;
+
+        [Resolved]
+        private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
 
         private FillFlowContainer collectionList = null!;
         private CreateCollectionButton createCollectionButton = null!;
@@ -202,6 +206,11 @@ namespace PerformanceCalculatorGUI.Screens
             currentCollection.ValueChanged += loadCollection;
             createCollectionButton.OnSave += onCollectionAdd;
             addScoreButton.OnAdd += onScoreAdd;
+            tuningManager.Current.BindValueChanged(_ =>
+            {
+                if (currentCollection.Value != null)
+                    calculateScores();
+            });
 
             loadCollectionList();
 
@@ -272,7 +281,10 @@ namespace PerformanceCalculatorGUI.Screens
                     if (score == null)
                         continue;
 
-                    var rulesetInstance = rulesets.GetRuleset(score.RulesetID)!.CreateInstance();
+                    var rulesetInfo = rulesets.GetRuleset(score.RulesetID)!;
+                    var rulesetInstance = rulesetInfo.ShortName == "osu"
+                        ? new OsuRuleset(tuningManager.Current.Value)
+                        : rulesetInfo.CreateInstance();
 
                     var working = ProcessorWorkingBeatmap.FromFileOrId(score.BeatmapID.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
 
