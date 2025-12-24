@@ -226,7 +226,7 @@ namespace PerformanceCalculatorGUI.Screens
                 return;
             }
 
-            currentCollection.Value.Scores = [..currentCollection.Value.Scores, scoreId];
+            currentCollection.Value.Scores = [.. currentCollection.Value.Scores, scoreId];
 
             saveCurrentCollection();
         }
@@ -234,6 +234,7 @@ namespace PerformanceCalculatorGUI.Screens
         private void onScoreRemove(long scoreId)
         {
             currentCollection.Value!.Scores = currentCollection.Value.Scores.Where(x => x != scoreId).ToArray();
+            currentCollection.Value.ExpectedPerformance.Remove(scoreId);
 
             saveCurrentCollection();
         }
@@ -246,6 +247,7 @@ namespace PerformanceCalculatorGUI.Screens
                 return;
             }
 
+            obj.NewValue.ExpectedPerformance ??= new Dictionary<long, ExpectedPerformanceValues>();
             collectionNameText.Text = obj.NewValue!.Name;
             collectionContainer.Show();
 
@@ -254,14 +256,25 @@ namespace PerformanceCalculatorGUI.Screens
 
         private void saveCurrentCollection()
         {
+            saveCurrentCollection(true);
+        }
+
+        private void saveCurrentCollection(bool recalculateScores)
+        {
             if (currentCollection.Value == null)
                 return;
 
-            string path = Path.Combine(collections_directory, currentCollection.Value.FileName);
+            saveCollection(currentCollection.Value, recalculateScores);
+        }
 
-            File.WriteAllText(path, JsonConvert.SerializeObject(currentCollection.Value));
+        private void saveCollection(Collection collection, bool recalculateScores)
+        {
+            string path = Path.Combine(collections_directory, collection.FileName);
 
-            calculateScores();
+            File.WriteAllText(path, JsonConvert.SerializeObject(collection));
+
+            if (recalculateScores && collection == currentCollection.Value)
+                calculateScores();
         }
 
         private void calculateScores()
@@ -273,9 +286,11 @@ namespace PerformanceCalculatorGUI.Screens
 
             loadingLayer.Show();
 
+            var collection = currentCollection.Value;
+
             Task.Run(async () =>
             {
-                foreach (long scoreId in currentCollection.Value.Scores)
+                foreach (long scoreId in collection.Scores)
                 {
                     var score = await scoreCache.GetScore(scoreId).ConfigureAwait(false);
                     if (score == null)
@@ -303,7 +318,8 @@ namespace PerformanceCalculatorGUI.Screens
                     var perfAttributes = performanceCalculator.Calculate(parsedScore.ScoreInfo, difficultyAttributes);
                     Schedule(() =>
                     {
-                        var scoreContainer = new ScoreContainer(new ExtendedScore(score, difficultyAttributes, perfAttributes));
+                        var scoreContainer = new ScoreContainer(new ExtendedScore(score, difficultyAttributes, perfAttributes), scoreId,
+                            collection.ExpectedPerformance, () => saveCollection(collection, false));
                         scoreContainer.OnDelete += onScoreRemove;
 
                         scoresList.Add(scoreContainer);
