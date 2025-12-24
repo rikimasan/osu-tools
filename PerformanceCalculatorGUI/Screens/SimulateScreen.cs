@@ -28,7 +28,6 @@ using osu.Game.Rulesets;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Osu;
-using osu.Game.Rulesets.Osu.Difficulty;
 using osu.Game.Rulesets.Osu.Mods;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
@@ -70,39 +69,6 @@ namespace PerformanceCalculatorGUI.Screens
         private LimitedLabelledNumberBox mehsTextBox = null!;
         private SwitchButton fullScoreDataSwitch = null!;
 
-        private FillFlowContainer osuTuningContainer = null!;
-        private LimitedLabelledFractionalNumberBox aimPerformanceScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox speedPerformanceScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox accuracyPerformanceScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox flashlightPerformanceScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox totalPerformanceScaleTextBox = null!;
-
-        private LimitedLabelledFractionalNumberBox aimSkillStrainScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox speedSkillStrainScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox flashlightSkillStrainScaleTextBox = null!;
-
-        private LimitedLabelledFractionalNumberBox aimWideAngleBonusScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox aimAcuteAngleScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox aimSliderBonusScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox aimVelocityChangeBonusScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox aimWiggleBonusScaleTextBox = null!;
-
-        private LimitedLabelledFractionalNumberBox flashlightMaxOpacityBonusScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox flashlightHiddenBonusScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox flashlightMinVelocityScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox flashlightSliderBonusScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox flashlightMinAngleScaleTextBox = null!;
-
-        private LimitedLabelledNumberBox rhythmHistoryTimeMaxTextBox = null!;
-        private LimitedLabelledNumberBox rhythmHistoryObjectsMaxTextBox = null!;
-        private LimitedLabelledFractionalNumberBox rhythmOverallScaleTextBox = null!;
-        private LimitedLabelledFractionalNumberBox rhythmRatioScaleTextBox = null!;
-
-        private LimitedLabelledFractionalNumberBox speedSingleSpacingThresholdTextBox = null!;
-        private LimitedLabelledFractionalNumberBox speedMinBonusBpmTextBox = null!;
-        private LimitedLabelledFractionalNumberBox speedBalancingFactorTextBox = null!;
-        private LimitedLabelledFractionalNumberBox speedDistanceScaleTextBox = null!;
-
         private DifficultyAttributes? difficultyAttributes;
         private AttributesTable difficultyAttributesContainer = null!;
 
@@ -124,8 +90,6 @@ namespace PerformanceCalculatorGUI.Screens
         private BufferedContainer? background;
 
         private ScheduledDelegate? debouncedPerformanceUpdate;
-        private ScheduledDelegate? debouncedTuningUpdate;
-        private bool isUpdatingTuningFromManager;
 
         [Resolved]
         private NotificationDisplay notificationDisplay { get; set; } = null!;
@@ -168,8 +132,6 @@ namespace PerformanceCalculatorGUI.Screens
         private const int file_selection_container_height = 40;
         private const int map_title_container_height = 40;
         private const float mod_selection_container_scale = 0.7f;
-        private const double tuning_min_value = 0.0;
-        private const double tuning_max_value = double.MaxValue;
 
         public SimulateScreen()
         {
@@ -186,8 +148,6 @@ namespace PerformanceCalculatorGUI.Screens
         [BackgroundDependencyLoader]
         private void load(OsuColour osuColour)
         {
-            var defaultTuning = tuningManager.Current.Value;
-
             InternalChildren = new Drawable[]
             {
                 new Box
@@ -460,231 +420,6 @@ namespace PerformanceCalculatorGUI.Screens
                                                     Scale = new Vector2(mod_selection_container_scale),
                                                     IsValidMod = mod => mod.HasImplementation && ModUtils.FlattenMod(mod).All(m => m.UserPlayable),
                                                     SelectedMods = { BindTarget = appliedMods }
-                                                },
-                                                osuTuningContainer = new FillFlowContainer
-                                                {
-                                                    Name = "Osu tuning",
-                                                    RelativeSizeAxes = Axes.X,
-                                                    AutoSizeAxes = Axes.Y,
-                                                    Direction = FillDirection.Vertical,
-                                                    Spacing = new Vector2(0, 4f),
-                                                    Children = new Drawable[]
-                                                    {
-                                                        new OsuSpriteText
-                                                        {
-                                                            Margin = new MarginPadding { Left = 10f, Top = 10f, Bottom = 6f },
-                                                            Origin = Anchor.TopLeft,
-                                                            Height = 20,
-                                                            Text = "osu! tuning"
-                                                        },
-                                                        new OsuSpriteText
-                                                        {
-                                                            Font = new FontUsage(size: 14.0f),
-                                                            Text = "Performance scales"
-                                                        },
-                                                        new GridContainer
-                                                        {
-                                                            RelativeSizeAxes = Axes.X,
-                                                            AutoSizeAxes = Axes.Y,
-                                                            ColumnDimensions = new[] { new Dimension(), new Dimension() },
-                                                            RowDimensions = new[]
-                                                            {
-                                                                new Dimension(GridSizeMode.AutoSize),
-                                                                new Dimension(GridSizeMode.AutoSize),
-                                                                new Dimension(GridSizeMode.AutoSize)
-                                                            },
-                                                            Content = new[]
-                                                            {
-                                                                new Drawable[]
-                                                                {
-                                                                    aimPerformanceScaleTextBox = createTuningBox("Aim perf scale", defaultTuning.AimPerformanceScale),
-                                                                    speedPerformanceScaleTextBox = createTuningBox("Speed perf scale", defaultTuning.SpeedPerformanceScale)
-                                                                },
-                                                                new Drawable[]
-                                                                {
-                                                                    accuracyPerformanceScaleTextBox = createTuningBox("Accuracy perf scale", defaultTuning.AccuracyPerformanceScale),
-                                                                    flashlightPerformanceScaleTextBox = createTuningBox("Flashlight perf scale", defaultTuning.FlashlightPerformanceScale)
-                                                                },
-                                                                new Drawable[]
-                                                                {
-                                                                    totalPerformanceScaleTextBox = createTuningBox("Total perf scale", defaultTuning.TotalPerformanceScale),
-                                                                    new Container()
-                                                                }
-                                                            }
-                                                        },
-                                                        new OsuSpriteText
-                                                        {
-                                                            Margin = new MarginPadding { Top = 6f },
-                                                            Font = new FontUsage(size: 14.0f),
-                                                            Text = "Skill strain scales"
-                                                        },
-                                                        new GridContainer
-                                                        {
-                                                            RelativeSizeAxes = Axes.X,
-                                                            AutoSizeAxes = Axes.Y,
-                                                            ColumnDimensions = new[] { new Dimension(), new Dimension() },
-                                                            RowDimensions = new[]
-                                                            {
-                                                                new Dimension(GridSizeMode.AutoSize),
-                                                                new Dimension(GridSizeMode.AutoSize)
-                                                            },
-                                                            Content = new[]
-                                                            {
-                                                                new Drawable[]
-                                                                {
-                                                                    aimSkillStrainScaleTextBox = createTuningBox("Aim strain scale", defaultTuning.AimSkillStrainScale),
-                                                                    speedSkillStrainScaleTextBox = createTuningBox("Speed strain scale", defaultTuning.SpeedSkillStrainScale)
-                                                                },
-                                                                new Drawable[]
-                                                                {
-                                                                    flashlightSkillStrainScaleTextBox = createTuningBox("Flashlight strain scale", defaultTuning.FlashlightSkillStrainScale),
-                                                                    new Container()
-                                                                }
-                                                            }
-                                                        },
-                                                        new OsuSpriteText
-                                                        {
-                                                            Margin = new MarginPadding { Top = 6f },
-                                                            Font = new FontUsage(size: 14.0f),
-                                                            Text = "Aim bonuses"
-                                                        },
-                                                        new GridContainer
-                                                        {
-                                                            RelativeSizeAxes = Axes.X,
-                                                            AutoSizeAxes = Axes.Y,
-                                                            ColumnDimensions = new[] { new Dimension(), new Dimension() },
-                                                            RowDimensions = new[]
-                                                            {
-                                                                new Dimension(GridSizeMode.AutoSize),
-                                                                new Dimension(GridSizeMode.AutoSize),
-                                                                new Dimension(GridSizeMode.AutoSize)
-                                                            },
-                                                            Content = new[]
-                                                            {
-                                                                new Drawable[]
-                                                                {
-                                                                    aimWideAngleBonusScaleTextBox = createTuningBox("Aim wide angle", defaultTuning.AimWideAngleBonusScale),
-                                                                    aimAcuteAngleScaleTextBox = createTuningBox("Aim acute angle", defaultTuning.AimAcuteAngleScale)
-                                                                },
-                                                                new Drawable[]
-                                                                {
-                                                                    aimSliderBonusScaleTextBox = createTuningBox("Aim slider bonus", defaultTuning.AimSliderBonusScale),
-                                                                    aimVelocityChangeBonusScaleTextBox = createTuningBox("Aim velocity bonus", defaultTuning.AimVelocityChangeBonusScale)
-                                                                },
-                                                                new Drawable[]
-                                                                {
-                                                                    aimWiggleBonusScaleTextBox = createTuningBox("Aim wiggle bonus", defaultTuning.AimWiggleBonusScale),
-                                                                    new Container()
-                                                                }
-                                                            }
-                                                        },
-                                                        new OsuSpriteText
-                                                        {
-                                                            Margin = new MarginPadding { Top = 6f },
-                                                            Font = new FontUsage(size: 14.0f),
-                                                            Text = "Flashlight bonuses"
-                                                        },
-                                                        new GridContainer
-                                                        {
-                                                            RelativeSizeAxes = Axes.X,
-                                                            AutoSizeAxes = Axes.Y,
-                                                            ColumnDimensions = new[] { new Dimension(), new Dimension() },
-                                                            RowDimensions = new[]
-                                                            {
-                                                                new Dimension(GridSizeMode.AutoSize),
-                                                                new Dimension(GridSizeMode.AutoSize),
-                                                                new Dimension(GridSizeMode.AutoSize)
-                                                            },
-                                                            Content = new[]
-                                                            {
-                                                                new Drawable[]
-                                                                {
-                                                                    flashlightMaxOpacityBonusScaleTextBox = createTuningBox("FL max opacity", defaultTuning.FlashlightMaxOpacityBonusScale),
-                                                                    flashlightHiddenBonusScaleTextBox = createTuningBox("FL hidden bonus", defaultTuning.FlashlightHiddenBonusScale)
-                                                                },
-                                                                new Drawable[]
-                                                                {
-                                                                    flashlightMinVelocityScaleTextBox = createTuningBox("FL min velocity", defaultTuning.FlashlightMinVelocityScale),
-                                                                    flashlightSliderBonusScaleTextBox = createTuningBox("FL slider bonus", defaultTuning.FlashlightSliderBonusScale)
-                                                                },
-                                                                new Drawable[]
-                                                                {
-                                                                    flashlightMinAngleScaleTextBox = createTuningBox("FL min angle", defaultTuning.FlashlightMinAngleScale),
-                                                                    new Container()
-                                                                }
-                                                            }
-                                                        },
-                                                        new OsuSpriteText
-                                                        {
-                                                            Margin = new MarginPadding { Top = 6f },
-                                                            Font = new FontUsage(size: 14.0f),
-                                                            Text = "Rhythm tuning"
-                                                        },
-                                                        new GridContainer
-                                                        {
-                                                            RelativeSizeAxes = Axes.X,
-                                                            AutoSizeAxes = Axes.Y,
-                                                            ColumnDimensions = new[] { new Dimension(), new Dimension() },
-                                                            RowDimensions = new[]
-                                                            {
-                                                                new Dimension(GridSizeMode.AutoSize),
-                                                                new Dimension(GridSizeMode.AutoSize)
-                                                            },
-                                                            Content = new[]
-                                                            {
-                                                                new Drawable[]
-                                                                {
-                                                                    rhythmHistoryTimeMaxTextBox = createTuningIntBox("Rhythm time max (ms)", defaultTuning.RhythmHistoryTimeMax),
-                                                                    rhythmHistoryObjectsMaxTextBox = createTuningIntBox("Rhythm objects max", defaultTuning.RhythmHistoryObjectsMax)
-                                                                },
-                                                                new Drawable[]
-                                                                {
-                                                                    rhythmOverallScaleTextBox = createTuningBox("Rhythm overall scale", defaultTuning.RhythmOverallScale),
-                                                                    rhythmRatioScaleTextBox = createTuningBox("Rhythm ratio scale", defaultTuning.RhythmRatioScale)
-                                                                }
-                                                            }
-                                                        },
-                                                        new OsuSpriteText
-                                                        {
-                                                            Margin = new MarginPadding { Top = 6f },
-                                                            Font = new FontUsage(size: 14.0f),
-                                                            Text = "Speed tuning"
-                                                        },
-                                                        new GridContainer
-                                                        {
-                                                            RelativeSizeAxes = Axes.X,
-                                                            AutoSizeAxes = Axes.Y,
-                                                            ColumnDimensions = new[] { new Dimension(), new Dimension() },
-                                                            RowDimensions = new[]
-                                                            {
-                                                                new Dimension(GridSizeMode.AutoSize),
-                                                                new Dimension(GridSizeMode.AutoSize)
-                                                            },
-                                                            Content = new[]
-                                                            {
-                                                                new Drawable[]
-                                                                {
-                                                                    speedSingleSpacingThresholdTextBox = createTuningBox("Speed single spacing", defaultTuning.SpeedSingleSpacingThreshold),
-                                                                    speedMinBonusBpmTextBox = createTuningBox("Speed min bonus BPM", defaultTuning.SpeedMinBonusBpm)
-                                                                },
-                                                                new Drawable[]
-                                                                {
-                                                                    speedBalancingFactorTextBox = createTuningBox("Speed balancing factor", defaultTuning.SpeedBalancingFactor),
-                                                                    speedDistanceScaleTextBox = createTuningBox("Speed distance scale", defaultTuning.SpeedDistanceScale)
-                                                                }
-                                                            }
-                                                        },
-                                                        new RoundedButton
-                                                        {
-                                                            Anchor = Anchor.TopCentre,
-                                                            Origin = Anchor.TopCentre,
-                                                            Width = 170,
-                                                            Height = 35,
-                                                            BackgroundColour = colourProvider.Background1,
-                                                            Text = "Reset tuning",
-                                                            Action = resetOsuDifficultyTuning
-                                                        }
-                                                    }
                                                 }
                                             }
                                         }
@@ -770,7 +505,6 @@ namespace PerformanceCalculatorGUI.Screens
 
             beatmapDataContainer.Hide();
             userModsSelectOverlay.Hide();
-            osuTuningContainer.Hide();
 
             beatmapFileTextBox.Current.BindValueChanged(filePath => { changeBeatmap(filePath.NewValue); });
             beatmapIdTextBox.OnCommit += (_, _) => { changeBeatmap(beatmapIdTextBox.Current.Value); };
@@ -805,8 +539,7 @@ namespace PerformanceCalculatorGUI.Screens
             sliderTailMissesTextBox.Value.BindValueChanged(_ => debouncedCalculatePerformance());
             comboTextBox.Value.BindValueChanged(_ => debouncedCalculatePerformance());
             scoreTextBox.Value.BindValueChanged(_ => debouncedCalculatePerformance());
-            bindTuningEvents();
-            tuningManager.Current.BindValueChanged(tuning => applyOsuDifficultyTuningFromManager(tuning.NewValue), true);
+            tuningManager.Current.BindValueChanged(_ => recalculateForTuning(), true);
 
             fullScoreDataSwitch.Current.BindValueChanged(val => updateAccuracyParams(val.NewValue));
 
@@ -1180,234 +913,14 @@ namespace PerformanceCalculatorGUI.Screens
             }
         }
 
-        private void bindTuningEvents()
+        private void recalculateForTuning()
         {
-            foreach (var bindable in new[]
-                     {
-                         aimPerformanceScaleTextBox.Value,
-                         speedPerformanceScaleTextBox.Value,
-                         accuracyPerformanceScaleTextBox.Value,
-                         flashlightPerformanceScaleTextBox.Value,
-                         totalPerformanceScaleTextBox.Value,
-                         aimSkillStrainScaleTextBox.Value,
-                         speedSkillStrainScaleTextBox.Value,
-                         flashlightSkillStrainScaleTextBox.Value,
-                         aimWideAngleBonusScaleTextBox.Value,
-                         aimAcuteAngleScaleTextBox.Value,
-                         aimSliderBonusScaleTextBox.Value,
-                         aimVelocityChangeBonusScaleTextBox.Value,
-                         aimWiggleBonusScaleTextBox.Value,
-                         flashlightMaxOpacityBonusScaleTextBox.Value,
-                         flashlightHiddenBonusScaleTextBox.Value,
-                         flashlightMinVelocityScaleTextBox.Value,
-                         flashlightSliderBonusScaleTextBox.Value,
-                         flashlightMinAngleScaleTextBox.Value,
-                         rhythmOverallScaleTextBox.Value,
-                         rhythmRatioScaleTextBox.Value,
-                         speedSingleSpacingThresholdTextBox.Value,
-                         speedMinBonusBpmTextBox.Value,
-                         speedBalancingFactorTextBox.Value,
-                         speedDistanceScaleTextBox.Value
-                     })
-            {
-                bindable.BindValueChanged(_ => debouncedApplyOsuDifficultyTuning());
-            }
-
-            foreach (var bindable in new[]
-                     {
-                         rhythmHistoryTimeMaxTextBox.Value,
-                         rhythmHistoryObjectsMaxTextBox.Value
-                     })
-            {
-                bindable.BindValueChanged(_ => debouncedApplyOsuDifficultyTuning());
-            }
-        }
-
-        private void debouncedApplyOsuDifficultyTuning()
-        {
-            if (isUpdatingTuningFromManager)
-                return;
-
-            debouncedTuningUpdate?.Cancel();
-            debouncedTuningUpdate = Scheduler.AddDelayed(applyOsuDifficultyTuning, 50);
-        }
-
-        private void applyOsuDifficultyTuning()
-        {
-            var tuning = createOsuDifficultyTuningFromInputs();
-
-            if (!tuning.Equals(tuningManager.Current.Value))
-                tuningManager.Current.Value = tuning;
-
             if (ruleset.Value.ShortName != "osu" || working == null)
                 return;
 
             createCalculators();
             calculateDifficulty();
             calculatePerformance();
-        }
-
-        private void applyOsuDifficultyTuningFromManager(OsuDifficultyTuning tuning)
-        {
-            isUpdatingTuningFromManager = true;
-            setTuningValue(aimPerformanceScaleTextBox, tuning.AimPerformanceScale);
-            setTuningValue(speedPerformanceScaleTextBox, tuning.SpeedPerformanceScale);
-            setTuningValue(accuracyPerformanceScaleTextBox, tuning.AccuracyPerformanceScale);
-            setTuningValue(flashlightPerformanceScaleTextBox, tuning.FlashlightPerformanceScale);
-            setTuningValue(totalPerformanceScaleTextBox, tuning.TotalPerformanceScale);
-
-            setTuningValue(aimSkillStrainScaleTextBox, tuning.AimSkillStrainScale);
-            setTuningValue(speedSkillStrainScaleTextBox, tuning.SpeedSkillStrainScale);
-            setTuningValue(flashlightSkillStrainScaleTextBox, tuning.FlashlightSkillStrainScale);
-
-            setTuningValue(aimWideAngleBonusScaleTextBox, tuning.AimWideAngleBonusScale);
-            setTuningValue(aimAcuteAngleScaleTextBox, tuning.AimAcuteAngleScale);
-            setTuningValue(aimSliderBonusScaleTextBox, tuning.AimSliderBonusScale);
-            setTuningValue(aimVelocityChangeBonusScaleTextBox, tuning.AimVelocityChangeBonusScale);
-            setTuningValue(aimWiggleBonusScaleTextBox, tuning.AimWiggleBonusScale);
-
-            setTuningValue(flashlightMaxOpacityBonusScaleTextBox, tuning.FlashlightMaxOpacityBonusScale);
-            setTuningValue(flashlightHiddenBonusScaleTextBox, tuning.FlashlightHiddenBonusScale);
-            setTuningValue(flashlightMinVelocityScaleTextBox, tuning.FlashlightMinVelocityScale);
-            setTuningValue(flashlightSliderBonusScaleTextBox, tuning.FlashlightSliderBonusScale);
-            setTuningValue(flashlightMinAngleScaleTextBox, tuning.FlashlightMinAngleScale);
-
-            setTuningValue(rhythmHistoryTimeMaxTextBox, tuning.RhythmHistoryTimeMax);
-            setTuningValue(rhythmHistoryObjectsMaxTextBox, tuning.RhythmHistoryObjectsMax);
-            setTuningValue(rhythmOverallScaleTextBox, tuning.RhythmOverallScale);
-            setTuningValue(rhythmRatioScaleTextBox, tuning.RhythmRatioScale);
-
-            setTuningValue(speedSingleSpacingThresholdTextBox, tuning.SpeedSingleSpacingThreshold);
-            setTuningValue(speedMinBonusBpmTextBox, tuning.SpeedMinBonusBpm);
-            setTuningValue(speedBalancingFactorTextBox, tuning.SpeedBalancingFactor);
-            setTuningValue(speedDistanceScaleTextBox, tuning.SpeedDistanceScale);
-            isUpdatingTuningFromManager = false;
-
-            if (ruleset.Value.ShortName != "osu" || working == null)
-                return;
-
-            createCalculators();
-            calculateDifficulty();
-            calculatePerformance();
-        }
-
-        private OsuDifficultyTuning createOsuDifficultyTuningFromInputs()
-        {
-            return new OsuDifficultyTuning
-            {
-                AimPerformanceScale = aimPerformanceScaleTextBox.Value.Value,
-                SpeedPerformanceScale = speedPerformanceScaleTextBox.Value.Value,
-                AccuracyPerformanceScale = accuracyPerformanceScaleTextBox.Value.Value,
-                FlashlightPerformanceScale = flashlightPerformanceScaleTextBox.Value.Value,
-                TotalPerformanceScale = totalPerformanceScaleTextBox.Value.Value,
-                AimSkillStrainScale = aimSkillStrainScaleTextBox.Value.Value,
-                SpeedSkillStrainScale = speedSkillStrainScaleTextBox.Value.Value,
-                FlashlightSkillStrainScale = flashlightSkillStrainScaleTextBox.Value.Value,
-                AimWideAngleBonusScale = aimWideAngleBonusScaleTextBox.Value.Value,
-                AimAcuteAngleScale = aimAcuteAngleScaleTextBox.Value.Value,
-                AimSliderBonusScale = aimSliderBonusScaleTextBox.Value.Value,
-                AimVelocityChangeBonusScale = aimVelocityChangeBonusScaleTextBox.Value.Value,
-                AimWiggleBonusScale = aimWiggleBonusScaleTextBox.Value.Value,
-                FlashlightMaxOpacityBonusScale = flashlightMaxOpacityBonusScaleTextBox.Value.Value,
-                FlashlightHiddenBonusScale = flashlightHiddenBonusScaleTextBox.Value.Value,
-                FlashlightMinVelocityScale = flashlightMinVelocityScaleTextBox.Value.Value,
-                FlashlightSliderBonusScale = flashlightSliderBonusScaleTextBox.Value.Value,
-                FlashlightMinAngleScale = flashlightMinAngleScaleTextBox.Value.Value,
-                RhythmHistoryTimeMax = rhythmHistoryTimeMaxTextBox.Value.Value,
-                RhythmHistoryObjectsMax = rhythmHistoryObjectsMaxTextBox.Value.Value,
-                RhythmOverallScale = rhythmOverallScaleTextBox.Value.Value,
-                RhythmRatioScale = rhythmRatioScaleTextBox.Value.Value,
-                SpeedSingleSpacingThreshold = speedSingleSpacingThresholdTextBox.Value.Value,
-                SpeedMinBonusBpm = speedMinBonusBpmTextBox.Value.Value,
-                SpeedBalancingFactor = speedBalancingFactorTextBox.Value.Value,
-                SpeedDistanceScale = speedDistanceScaleTextBox.Value.Value
-            };
-        }
-
-        private void resetOsuDifficultyTuning()
-        {
-            var defaults = OsuDifficultyTuning.Default;
-
-            setTuningValue(aimPerformanceScaleTextBox, defaults.AimPerformanceScale);
-            setTuningValue(speedPerformanceScaleTextBox, defaults.SpeedPerformanceScale);
-            setTuningValue(accuracyPerformanceScaleTextBox, defaults.AccuracyPerformanceScale);
-            setTuningValue(flashlightPerformanceScaleTextBox, defaults.FlashlightPerformanceScale);
-            setTuningValue(totalPerformanceScaleTextBox, defaults.TotalPerformanceScale);
-
-            setTuningValue(aimSkillStrainScaleTextBox, defaults.AimSkillStrainScale);
-            setTuningValue(speedSkillStrainScaleTextBox, defaults.SpeedSkillStrainScale);
-            setTuningValue(flashlightSkillStrainScaleTextBox, defaults.FlashlightSkillStrainScale);
-
-            setTuningValue(aimWideAngleBonusScaleTextBox, defaults.AimWideAngleBonusScale);
-            setTuningValue(aimAcuteAngleScaleTextBox, defaults.AimAcuteAngleScale);
-            setTuningValue(aimSliderBonusScaleTextBox, defaults.AimSliderBonusScale);
-            setTuningValue(aimVelocityChangeBonusScaleTextBox, defaults.AimVelocityChangeBonusScale);
-            setTuningValue(aimWiggleBonusScaleTextBox, defaults.AimWiggleBonusScale);
-
-            setTuningValue(flashlightMaxOpacityBonusScaleTextBox, defaults.FlashlightMaxOpacityBonusScale);
-            setTuningValue(flashlightHiddenBonusScaleTextBox, defaults.FlashlightHiddenBonusScale);
-            setTuningValue(flashlightMinVelocityScaleTextBox, defaults.FlashlightMinVelocityScale);
-            setTuningValue(flashlightSliderBonusScaleTextBox, defaults.FlashlightSliderBonusScale);
-            setTuningValue(flashlightMinAngleScaleTextBox, defaults.FlashlightMinAngleScale);
-
-            setTuningValue(rhythmHistoryTimeMaxTextBox, defaults.RhythmHistoryTimeMax);
-            setTuningValue(rhythmHistoryObjectsMaxTextBox, defaults.RhythmHistoryObjectsMax);
-            setTuningValue(rhythmOverallScaleTextBox, defaults.RhythmOverallScale);
-            setTuningValue(rhythmRatioScaleTextBox, defaults.RhythmRatioScale);
-
-            setTuningValue(speedSingleSpacingThresholdTextBox, defaults.SpeedSingleSpacingThreshold);
-            setTuningValue(speedMinBonusBpmTextBox, defaults.SpeedMinBonusBpm);
-            setTuningValue(speedBalancingFactorTextBox, defaults.SpeedBalancingFactor);
-            setTuningValue(speedDistanceScaleTextBox, defaults.SpeedDistanceScale);
-
-            debouncedApplyOsuDifficultyTuning();
-        }
-
-        private void updateOsuTuningVisibility()
-        {
-            if (ruleset.Value.ShortName == "osu")
-                osuTuningContainer.Show();
-            else
-                osuTuningContainer.Hide();
-        }
-
-        private LimitedLabelledFractionalNumberBox createTuningBox(string label, double defaultValue)
-        {
-            return new LimitedLabelledFractionalNumberBox
-            {
-                RelativeSizeAxes = Axes.X,
-                Anchor = Anchor.TopLeft,
-                Label = label,
-                PlaceholderText = defaultValue.ToString(),
-                MinValue = tuning_min_value,
-                MaxValue = tuning_max_value,
-                Value = { Value = defaultValue }
-            };
-        }
-
-        private LimitedLabelledNumberBox createTuningIntBox(string label, int defaultValue)
-        {
-            return new LimitedLabelledNumberBox
-            {
-                RelativeSizeAxes = Axes.X,
-                Anchor = Anchor.TopLeft,
-                Label = label,
-                PlaceholderText = defaultValue.ToString(),
-                MinValue = 0,
-                Value = { Value = defaultValue }
-            };
-        }
-
-        private static void setTuningValue(LimitedLabelledFractionalNumberBox box, double value)
-        {
-            box.Text = string.Empty;
-            box.Value.Value = value;
-        }
-
-        private static void setTuningValue(LimitedLabelledNumberBox box, int value)
-        {
-            box.Text = string.Empty;
-            box.Value.Value = value;
         }
 
         private void resetMods()
@@ -1433,7 +946,6 @@ namespace PerformanceCalculatorGUI.Screens
             calculateDifficulty();
             calculatePerformance();
             populateScoreParams();
-            updateOsuTuningVisibility();
         }
 
         // This is to make sure combo resets when classic mod is applied
