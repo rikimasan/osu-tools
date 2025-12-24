@@ -21,6 +21,7 @@ using osu.Game.Overlays;
 using osu.Game.Overlays.BeatmapSet.Scores;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Mods;
+using osu.Game.Rulesets.Osu;
 using osu.Game.Scoring;
 using PerformanceCalculatorGUI.Components;
 using PerformanceCalculatorGUI.Components.TextBoxes;
@@ -60,6 +61,9 @@ namespace PerformanceCalculatorGUI.Screens
 
         [Resolved]
         private SettingsManager configManager { get; set; } = null!;
+
+        [Resolved]
+        private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
 
         public override bool ShouldShowConfirmationDialogOnSwitch => false;
 
@@ -191,6 +195,11 @@ namespace PerformanceCalculatorGUI.Screens
             };
 
             ruleset.BindValueChanged(_ => { calculate(); });
+            tuningManager.Current.BindValueChanged(_ =>
+            {
+                if (!string.IsNullOrWhiteSpace(beatmapIdTextBox.Current.Value))
+                    calculate();
+            });
             beatmapIdTextBox.OnCommit += (_, _) => { calculate(); };
 
             if (RuntimeInfo.IsDesktop)
@@ -238,7 +247,9 @@ namespace PerformanceCalculatorGUI.Screens
 
                 var plays = new List<SoloScoreInfo>();
 
-                var rulesetInstance = ruleset.Value.CreateInstance();
+                var rulesetInstance = ruleset.Value.ShortName == "osu"
+                    ? new OsuRuleset(tuningManager.Current.Value)
+                    : ruleset.Value.CreateInstance();
 
                 var working = ProcessorWorkingBeatmap.FromFileOrId(beatmap, cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
 

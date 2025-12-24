@@ -20,6 +20,7 @@ using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Mods;
+using osu.Game.Rulesets.Osu;
 using osu.Game.Users;
 using PerformanceCalculatorGUI.Components;
 using PerformanceCalculatorGUI.Components.TextBoxes;
@@ -74,6 +75,9 @@ namespace PerformanceCalculatorGUI.Screens
 
         [Resolved]
         private SettingsManager configManager { get; set; } = null!;
+
+        [Resolved]
+        private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
 
         private const int settings_height = 40;
         private const int tabs_height = 20;
@@ -217,6 +221,12 @@ namespace PerformanceCalculatorGUI.Screens
                     }
                 }
             };
+
+            tuningManager.Current.BindValueChanged(_ =>
+            {
+                if (players.Count > 0 || scores.Count > 0)
+                    calculate();
+            });
         }
 
         protected override void Dispose(bool isDisposing)
@@ -310,7 +320,9 @@ namespace PerformanceCalculatorGUI.Screens
 
             var apiScores = await apiManager.GetJsonFromApi<List<SoloScoreInfo>>($"users/{player.User.OnlineID}/scores/best?mode={ruleset.Value.ShortName}&limit=100").ConfigureAwait(false);
 
-            var rulesetInstance = ruleset.Value.CreateInstance();
+            var rulesetInstance = ruleset.Value.ShortName == "osu"
+                ? new OsuRuleset(tuningManager.Current.Value)
+                : ruleset.Value.CreateInstance();
 
             try
             {

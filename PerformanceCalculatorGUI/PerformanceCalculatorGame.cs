@@ -48,6 +48,7 @@ namespace PerformanceCalculatorGUI
             var apiConfig = new SettingsManager(Storage);
             dependencies.CacheAs(apiConfig);
             dependencies.CacheAs(new APIManager(apiConfig));
+            dependencies.CacheAs(new OsuDifficultyTuningManager());
 
             Ruleset.Value = new OsuRuleset().RulesetInfo;
 
