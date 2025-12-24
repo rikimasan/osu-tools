@@ -22,6 +22,8 @@ using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Mods;
+using osu.Game.Rulesets.Osu;
+using osu.Game.Rulesets.Osu.Difficulty;
 using osuTK;
 using osuTK.Graphics;
 using osuTK.Input;
@@ -42,6 +44,7 @@ namespace PerformanceCalculatorGUI.Screens
         private SwitchButton includePinnedCheckbox = null!;
         private SwitchButton onlyDisplayBestCheckbox = null!;
         private VerboseLoadingLayer loadingLayer = null!;
+        private ProfileTuningButton tuningButton = null!;
 
         private GridContainer layout = null!;
 
@@ -54,6 +57,7 @@ namespace PerformanceCalculatorGUI.Screens
         private string[] currentUsers = Array.Empty<string>();
 
         private CancellationTokenSource? calculationCancellatonToken;
+        private OsuDifficultyTuning osuDifficultyTuning = OsuDifficultyTuning.Default;
 
         private OverlaySortTabControl<ProfileSortCriteria> sortingTabControl = null!;
         private readonly Bindable<ProfileSortCriteria> sorting = new Bindable<ProfileSortCriteria>(ProfileSortCriteria.Local);
@@ -117,6 +121,7 @@ namespace PerformanceCalculatorGUI.Screens
                                 ColumnDimensions = new[]
                                 {
                                     new Dimension(),
+                                    new Dimension(GridSizeMode.AutoSize),
                                     new Dimension(GridSizeMode.AutoSize)
                                 },
                                 RowDimensions = new[]
@@ -140,6 +145,14 @@ namespace PerformanceCalculatorGUI.Screens
                                             Width = 150,
                                             Height = username_container_height,
                                             Action = () => { calculateProfiles(usernameTextBox.Current.Value.Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)); }
+                                        },
+                                        tuningButton = new ProfileTuningButton(() => osuDifficultyTuning, applyProfileTuning)
+                                        {
+                                            Width = 160,
+                                            Height = username_container_height,
+                                            Margin = new MarginPadding { Left = 5 },
+                                            BackgroundColour = colourProvider.Background1,
+                                            TooltipText = "Adjust osu! tuning parameters"
                                         }
                                     }
                                 }
@@ -235,6 +248,7 @@ namespace PerformanceCalculatorGUI.Screens
             sorting.ValueChanged += e => { updateSorting(e.NewValue); };
             includePinnedCheckbox.Current.ValueChanged += e => { calculateProfiles(currentUsers); };
             onlyDisplayBestCheckbox.Current.ValueChanged += e => { calculateProfiles(currentUsers); };
+            ruleset.BindValueChanged(_ => updateTuningButtonVisibility(), true);
 
             if (RuntimeInfo.IsDesktop)
                 HotReloadCallbackReceiver.CompilationFinished += _ => Schedule(() => { calculateProfiles(currentUsers); });
@@ -285,7 +299,9 @@ namespace PerformanceCalculatorGUI.Screens
 
                 var plays = new List<ExtendedScore>();
                 var players = new List<APIUser>();
-                var rulesetInstance = ruleset.Value.CreateInstance();
+                var rulesetInstance = ruleset.Value.ShortName == "osu"
+                    ? new OsuRuleset(osuDifficultyTuning)
+                    : ruleset.Value.CreateInstance();
 
                 foreach (string username in currentUsers)
                 {
@@ -441,6 +457,22 @@ namespace PerformanceCalculatorGUI.Screens
                     updateSorting(ProfileSortCriteria.Local);
                 });
             }, TaskContinuationOptions.None);
+        }
+
+        private void applyProfileTuning(OsuDifficultyTuning tuning)
+        {
+            osuDifficultyTuning = tuning;
+
+            if (currentUsers.Length > 0)
+                calculateProfiles(currentUsers);
+        }
+
+        private void updateTuningButtonVisibility()
+        {
+            if (ruleset.Value.ShortName == "osu")
+                tuningButton.Show();
+            else
+                tuningButton.Hide();
         }
 
         protected override void Dispose(bool isDisposing)
