@@ -13,6 +13,7 @@ using osu.Framework.Input.Events;
 using osu.Framework.Threading;
 using osu.Framework.Utils;
 using osu.Game.Graphics;
+using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Overlays;
@@ -36,10 +37,14 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         private ExpectedPerformanceValues? expectedValues;
 
         private FillFlowContainer expectedValuesContainer = null!;
+        private FillFlowContainer expectedValuesRows = null!;
+        private OsuSpriteText expectedValuesToggleText = null!;
         private ScheduledDelegate? debouncedExpectedSave;
 
         private const float expected_row_height = 35;
         private const float expected_label_width = 140;
+
+        private bool expectedValuesExpanded = false;
 
         [Resolved]
         private OverlayColourProvider colourProvider { get; set; } = null!;
@@ -148,17 +153,20 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             }
 
             expectedValuesContainer.Show();
-            expectedValuesContainer.Add(new OsuSpriteText
+            expectedValuesContainer.Add(createExpectedHeader());
+            expectedValuesRows = new FillFlowContainer
             {
-                Text = "Expected values",
-                Font = OsuFont.GetFont(size: 12, weight: FontWeight.SemiBold),
-                Colour = colourProvider.Light2,
-                Margin = new MarginPadding { Left = 5, Bottom = 2 }
-            });
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+                Direction = FillDirection.Vertical,
+                Spacing = new Vector2(0, 4),
+                Padding = new MarginPadding { Left = 5 }
+            };
+            expectedValuesContainer.Add(expectedValuesRows);
 
             if (numericAttributes.TryGetValue("total", out double total))
             {
-                expectedValuesContainer.Add(createExpectedRow("total", total, expectedValues?.Total, setExpectedTotal));
+                expectedValuesRows.Add(createExpectedRow("total", total, expectedValues?.Total, setExpectedTotal));
             }
 
             foreach (var attribute in numericAttributes.Where(x => x.Key != "total").OrderBy(x => x.Key))
@@ -168,8 +176,64 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 if (expectedValues?.Skills.TryGetValue(attribute.Key, out double storedValue) == true)
                     expectedValue = storedValue;
 
-                expectedValuesContainer.Add(createExpectedRow(attribute.Key, attribute.Value, expectedValue,
+                expectedValuesRows.Add(createExpectedRow(attribute.Key, attribute.Value, expectedValue,
                     value => setExpectedSkill(attribute.Key, value)));
+            }
+
+            updateExpectedValuesState();
+        }
+
+        private Drawable createExpectedHeader()
+        {
+            expectedValuesToggleText = new OsuSpriteText
+            {
+                Text = expectedValuesExpanded ? "v" : ">",
+                Font = OsuFont.GetFont(size: 12, weight: FontWeight.Bold),
+                Colour = colourProvider.Light2,
+                Width = 12
+            };
+
+            return new ExpectedValuesHeader(toggleExpectedValues)
+            {
+                Child = new FillFlowContainer
+                {
+                    AutoSizeAxes = Axes.Both,
+                    Direction = FillDirection.Horizontal,
+                    Spacing = new Vector2(6, 0),
+                    Children = new Drawable[]
+                    {
+                        expectedValuesToggleText,
+                        new OsuSpriteText
+                        {
+                            Text = "Expected values",
+                            Font = OsuFont.GetFont(size: 12, weight: FontWeight.SemiBold),
+                            Colour = colourProvider.Light2
+                        }
+                    }
+                }
+            };
+        }
+
+        private void toggleExpectedValues()
+        {
+            expectedValuesExpanded = !expectedValuesExpanded;
+            updateExpectedValuesState();
+        }
+
+        private void updateExpectedValuesState()
+        {
+            if (expectedValuesRows == null || expectedValuesToggleText == null)
+                return;
+
+            if (expectedValuesExpanded)
+            {
+                expectedValuesRows.Show();
+                expectedValuesToggleText.Text = "v";
+            }
+            else
+            {
+                expectedValuesRows.Hide();
+                expectedValuesToggleText.Text = ">";
             }
         }
 
@@ -343,6 +407,18 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             }
 
             return double.TryParse(value.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out parsed);
+        }
+
+        private partial class ExpectedValuesHeader : OsuClickableContainer
+        {
+            public ExpectedValuesHeader(Action action)
+                : base(HoverSampleSet.Button)
+            {
+                Action = action;
+                RelativeSizeAxes = Axes.X;
+                AutoSizeAxes = Axes.Y;
+                Padding = new MarginPadding { Left = 5, Bottom = 2 };
+            }
         }
     }
 }
