@@ -90,7 +90,7 @@ namespace PerformanceCalculatorGUI.Screens
 
         private const string collections_directory = "collections";
         private const int autobalance_max_iterations = 10000;
-        private const double autobalance_tolerance = 1e-3;
+        private const double autobalance_tolerance = 0.01;
 
         public CollectionsScreen()
         {
