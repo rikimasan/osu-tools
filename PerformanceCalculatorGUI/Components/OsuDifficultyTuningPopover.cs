@@ -419,6 +419,8 @@ namespace PerformanceCalculatorGUI.Components
             setTuningValue(speedMinBonusBpmTextBox, defaults.SpeedMinBonusBpm);
             setTuningValue(speedBalancingFactorTextBox, defaults.SpeedBalancingFactor);
             setTuningValue(speedDistanceScaleTextBox, defaults.SpeedDistanceScale);
+
+            tuningManager.Current.Value = defaults;
         }
 
         private LimitedLabelledFractionalNumberBox createTuningBox(string label, double defaultValue)
@@ -450,12 +452,14 @@ namespace PerformanceCalculatorGUI.Components
 
         private static void setTuningValue(LimitedLabelledFractionalNumberBox box, double value)
         {
+            box.PlaceholderText = value.ToString();
             box.Text = string.Empty;
             box.Value.Value = value;
         }
 
         private static void setTuningValue(LimitedLabelledNumberBox box, int value)
         {
+            box.PlaceholderText = value.ToString();
             box.Text = string.Empty;
             box.Value.Value = value;
         }
