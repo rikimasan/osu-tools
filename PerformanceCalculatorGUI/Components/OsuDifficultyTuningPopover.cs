@@ -3,7 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using Newtonsoft.Json;
 using osu.Framework.Allocation;
+using osu.Framework.Bindables;
 using osu.Framework.Extensions;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
@@ -47,14 +50,23 @@ namespace PerformanceCalculatorGUI.Components
     {
         private const double tuning_min_value = 0.0;
         private const double tuning_max_value = double.MaxValue;
+        private const string default_tuning_file_name = "osu-tuning.json";
 
         [Resolved]
         private OverlayColourProvider colourProvider { get; set; } = null!;
 
         [Resolved]
+        private SettingsManager configManager { get; set; } = null!;
+
+        [Resolved]
+        private NotificationDisplay notificationDisplay { get; set; } = null!;
+
+        [Resolved]
         private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
 
         private readonly List<TuningControl> tuningControls = new List<TuningControl>();
+        private Bindable<string> defaultPathBindable = null!;
+        private FileChooserLabelledTextBox tuningFileTextBox = null!;
 
         public OsuDifficultyTuningPopover()
             : base(false)
@@ -66,6 +78,8 @@ namespace PerformanceCalculatorGUI.Components
         {
             var initialTuning = tuningManager.Current.Value;
             tuningControls.Clear();
+            defaultPathBindable = configManager.GetBindable<string>(Settings.DefaultPath);
+            string defaultPresetPath = getDefaultPresetPath();
 
             var content = new List<Drawable>
             {
@@ -92,6 +106,57 @@ namespace PerformanceCalculatorGUI.Components
 
                 content.Add(createSectionGrid(section, initialTuning));
             }
+
+            content.Add(new OsuSpriteText
+            {
+                Margin = new MarginPadding { Top = 6f },
+                Font = OsuFont.Torus.With(size: 14, weight: FontWeight.SemiBold),
+                Text = "Tuning presets"
+            });
+
+            content.Add(new FillFlowContainer
+            {
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+                Direction = FillDirection.Vertical,
+                Spacing = new Vector2(0, 6f),
+                Children = new Drawable[]
+                {
+                    tuningFileTextBox = new FileChooserLabelledTextBox(defaultPathBindable, ".json")
+                    {
+                        RelativeSizeAxes = Axes.X,
+                        Label = "Preset file",
+                        FixedLabelWidth = 100f,
+                        PlaceholderText = defaultPresetPath,
+                        Current = { Value = defaultPresetPath }
+                    },
+                    new FillFlowContainer
+                    {
+                        AutoSizeAxes = Axes.Both,
+                        Direction = FillDirection.Horizontal,
+                        Spacing = new Vector2(8, 0),
+                        Children = new Drawable[]
+                        {
+                            new RoundedButton
+                            {
+                                Width = 120,
+                                Height = 32,
+                                BackgroundColour = colourProvider.Background3,
+                                Text = "Load",
+                                Action = loadFromJson
+                            },
+                            new RoundedButton
+                            {
+                                Width = 120,
+                                Height = 32,
+                                BackgroundColour = colourProvider.Background3,
+                                Text = "Save",
+                                Action = saveToJson
+                            }
+                        }
+                    }
+                }
+            });
 
             content.Add(new FillFlowContainer
             {
@@ -198,28 +263,14 @@ namespace PerformanceCalculatorGUI.Components
 
         private void apply()
         {
-            var tuning = tuningManager.Current.Value;
-
-            foreach (var control in tuningControls)
-            {
-                tuning = control.Parameter.Setter(tuning, control.Value);
-            }
-
-            tuningManager.Current.Value = tuning;
+            tuningManager.Current.Value = buildTuningFromControls();
 
             this.HidePopover();
         }
 
         private void resetToDefaults()
         {
-            var defaults = OsuDifficultyTuning.Default;
-
-            foreach (var control in tuningControls)
-            {
-                control.Reset(control.Parameter.Getter(defaults));
-            }
-
-            tuningManager.Current.Value = defaults;
+            applyTuning(OsuDifficultyTuning.Default);
         }
 
         private LimitedLabelledFractionalNumberBox createTuningBox(string label, double defaultValue)
@@ -261,6 +312,111 @@ namespace PerformanceCalculatorGUI.Components
             box.PlaceholderText = value.ToString();
             box.Text = string.Empty;
             box.Value.Value = value;
+        }
+
+        private OsuDifficultyTuning buildTuningFromControls()
+        {
+            var tuning = tuningManager.Current.Value;
+
+            foreach (var control in tuningControls)
+            {
+                tuning = control.Parameter.Setter(tuning, control.Value);
+            }
+
+            return tuning;
+        }
+
+        private void applyTuning(OsuDifficultyTuning tuning)
+        {
+            foreach (var control in tuningControls)
+            {
+                control.Reset(control.Parameter.Getter(tuning));
+            }
+
+            tuningManager.Current.Value = tuning;
+        }
+
+        private string getDefaultPresetPath()
+        {
+            if (string.IsNullOrWhiteSpace(defaultPathBindable.Value))
+                return default_tuning_file_name;
+
+            return Path.Combine(defaultPathBindable.Value, default_tuning_file_name);
+        }
+
+        private string? getPresetPath()
+        {
+            if (tuningFileTextBox == null)
+                return null;
+
+            string path = tuningFileTextBox.Current.Value?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(path))
+                path = getDefaultPresetPath();
+
+            return string.IsNullOrWhiteSpace(path) ? null : path;
+        }
+
+        private void saveToJson()
+        {
+            string? path = getPresetPath();
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                notificationDisplay.Display(new Notification("Select a preset file path first."));
+                return;
+            }
+
+            try
+            {
+                string? directory = Path.GetDirectoryName(path);
+
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
+
+                var tuning = buildTuningFromControls();
+                File.WriteAllText(path, JsonConvert.SerializeObject(tuning, Formatting.Indented));
+                notificationDisplay.Display(new Notification($"Saved tuning preset to {Path.GetFileName(path)}."));
+            }
+            catch (Exception e)
+            {
+                notificationDisplay.Display(new Notification($"Failed to save tuning preset: {e.Message}"));
+            }
+        }
+
+        private void loadFromJson()
+        {
+            string? path = getPresetPath();
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                notificationDisplay.Display(new Notification("Select a preset file path first."));
+                return;
+            }
+
+            if (!File.Exists(path))
+            {
+                notificationDisplay.Display(new Notification($"Preset file not found: {path}"));
+                return;
+            }
+
+            try
+            {
+                var tuning = JsonConvert.DeserializeObject<OsuDifficultyTuning>(File.ReadAllText(path));
+
+                if (tuning == null)
+                {
+                    notificationDisplay.Display(new Notification("Preset file did not contain valid tuning values."));
+                    return;
+                }
+
+                applyTuning(tuning);
+                notificationDisplay.Display(new Notification($"Loaded tuning preset from {Path.GetFileName(path)}."));
+            }
+            catch (Exception e)
+            {
+                notificationDisplay.Display(new Notification($"Failed to load tuning preset: {e.Message}"));
+            }
         }
 
         private sealed class TuningControl
