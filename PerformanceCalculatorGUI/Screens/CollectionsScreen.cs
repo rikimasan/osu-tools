@@ -826,35 +826,8 @@ namespace PerformanceCalculatorGUI.Screens
 
         private static readonly AutobalanceParameter[] autobalanceParameters = createAutobalanceParameters();
 
-        private static AutobalanceParameter[] createAutobalanceParameters() => new[]
-        {
-            AutobalanceParameter.ForDouble("Aim perf", t => t.AimPerformanceScale, (t, v) => t with { AimPerformanceScale = v }, true),
-            AutobalanceParameter.ForDouble("Speed perf", t => t.SpeedPerformanceScale, (t, v) => t with { SpeedPerformanceScale = v }, true),
-            AutobalanceParameter.ForDouble("Accuracy perf", t => t.AccuracyPerformanceScale, (t, v) => t with { AccuracyPerformanceScale = v }, true),
-            AutobalanceParameter.ForDouble("Flashlight perf", t => t.FlashlightPerformanceScale, (t, v) => t with { FlashlightPerformanceScale = v }, false),
-            AutobalanceParameter.ForDouble("Total perf", t => t.TotalPerformanceScale, (t, v) => t with { TotalPerformanceScale = v }, true),
-            AutobalanceParameter.ForDouble("Aim strain", t => t.AimSkillStrainScale, (t, v) => t with { AimSkillStrainScale = v }, true),
-            AutobalanceParameter.ForDouble("Speed strain", t => t.SpeedSkillStrainScale, (t, v) => t with { SpeedSkillStrainScale = v }, true),
-            AutobalanceParameter.ForDouble("Flashlight strain", t => t.FlashlightSkillStrainScale, (t, v) => t with { FlashlightSkillStrainScale = v }, false),
-            AutobalanceParameter.ForDouble("Aim wide angle", t => t.AimWideAngleBonusScale, (t, v) => t with { AimWideAngleBonusScale = v }, true),
-            AutobalanceParameter.ForDouble("Aim acute angle", t => t.AimAcuteAngleScale, (t, v) => t with { AimAcuteAngleScale = v }, true),
-            AutobalanceParameter.ForDouble("Aim slider bonus", t => t.AimSliderBonusScale, (t, v) => t with { AimSliderBonusScale = v }, true),
-            AutobalanceParameter.ForDouble("Aim velocity bonus", t => t.AimVelocityChangeBonusScale, (t, v) => t with { AimVelocityChangeBonusScale = v }, true),
-            AutobalanceParameter.ForDouble("Aim wiggle bonus", t => t.AimWiggleBonusScale, (t, v) => t with { AimWiggleBonusScale = v }, true),
-            AutobalanceParameter.ForDouble("Flashlight max opacity", t => t.FlashlightMaxOpacityBonusScale, (t, v) => t with { FlashlightMaxOpacityBonusScale = v }, false),
-            AutobalanceParameter.ForDouble("Flashlight hidden bonus", t => t.FlashlightHiddenBonusScale, (t, v) => t with { FlashlightHiddenBonusScale = v }, false),
-            AutobalanceParameter.ForDouble("Flashlight min velocity", t => t.FlashlightMinVelocityScale, (t, v) => t with { FlashlightMinVelocityScale = v }, false),
-            AutobalanceParameter.ForDouble("Flashlight slider bonus", t => t.FlashlightSliderBonusScale, (t, v) => t with { FlashlightSliderBonusScale = v }, false),
-            AutobalanceParameter.ForDouble("Flashlight min angle", t => t.FlashlightMinAngleScale, (t, v) => t with { FlashlightMinAngleScale = v }, false),
-            AutobalanceParameter.ForInt("Rhythm history ms", t => t.RhythmHistoryTimeMax, (t, v) => t with { RhythmHistoryTimeMax = v }, true),
-            AutobalanceParameter.ForInt("Rhythm history objs", t => t.RhythmHistoryObjectsMax, (t, v) => t with { RhythmHistoryObjectsMax = v }, true),
-            AutobalanceParameter.ForDouble("Rhythm overall", t => t.RhythmOverallScale, (t, v) => t with { RhythmOverallScale = v }, true),
-            AutobalanceParameter.ForDouble("Rhythm ratio", t => t.RhythmRatioScale, (t, v) => t with { RhythmRatioScale = v }, true),
-            AutobalanceParameter.ForDouble("Speed spacing", t => t.SpeedSingleSpacingThreshold, (t, v) => t with { SpeedSingleSpacingThreshold = v }, true),
-            AutobalanceParameter.ForDouble("Speed min bpm", t => t.SpeedMinBonusBpm, (t, v) => t with { SpeedMinBonusBpm = v }, true),
-            AutobalanceParameter.ForDouble("Speed balance", t => t.SpeedBalancingFactor, (t, v) => t with { SpeedBalancingFactor = v }, true),
-            AutobalanceParameter.ForDouble("Speed distance", t => t.SpeedDistanceScale, (t, v) => t with { SpeedDistanceScale = v }, true),
-        };
+        private static AutobalanceParameter[] createAutobalanceParameters() =>
+            OsuDifficultyTuningParameters.All.Select(parameter => new AutobalanceParameter(parameter)).ToArray();
 
         private enum AutobalanceTarget
         {
@@ -879,15 +852,14 @@ namespace PerformanceCalculatorGUI.Screens
             public bool IsInteger { get; }
             public bool DefaultEnabled { get; }
 
-            private AutobalanceParameter(string label, Func<OsuDifficultyTuning, double> getter, Func<OsuDifficultyTuning, double, OsuDifficultyTuning> setter,
-                                         double minValue, bool isInteger, bool defaultEnabled)
+            public AutobalanceParameter(OsuDifficultyTuningParameter definition)
             {
-                Label = label;
-                Getter = getter;
-                Setter = setter;
-                MinValue = minValue;
-                IsInteger = isInteger;
-                DefaultEnabled = defaultEnabled;
+                Label = definition.AutobalanceLabel;
+                Getter = definition.Getter;
+                Setter = definition.Setter;
+                MinValue = definition.AutobalanceMinValue;
+                IsInteger = definition.IsInteger;
+                DefaultEnabled = definition.DefaultEnabled;
             }
 
             public OsuDifficultyTuning Apply(OsuDifficultyTuning tuning, double value)
@@ -905,13 +877,6 @@ namespace PerformanceCalculatorGUI.Screens
                 return Setter(tuning, clamped);
             }
 
-            public static AutobalanceParameter ForDouble(string label, Func<OsuDifficultyTuning, double> getter,
-                                                         Func<OsuDifficultyTuning, double, OsuDifficultyTuning> setter, bool defaultEnabled)
-                => new AutobalanceParameter(label, getter, setter, 0.01, false, defaultEnabled);
-
-            public static AutobalanceParameter ForInt(string label, Func<OsuDifficultyTuning, int> getter,
-                                                      Func<OsuDifficultyTuning, int, OsuDifficultyTuning> setter, bool defaultEnabled)
-                => new AutobalanceParameter(label, t => getter(t), (t, v) => setter(t, (int)v), 1, true, defaultEnabled);
         }
 
         private sealed class AutobalanceScoreData
