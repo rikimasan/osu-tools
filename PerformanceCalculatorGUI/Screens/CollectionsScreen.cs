@@ -89,7 +89,7 @@ namespace PerformanceCalculatorGUI.Screens
         private readonly Bindable<Collection?> currentCollection = new Bindable<Collection?>();
 
         private const string collections_directory = "collections";
-        private const int autobalance_max_iterations = 200;
+        private const int autobalance_max_iterations = 10000;
         private const double autobalance_tolerance = 1e-3;
 
         public CollectionsScreen()
@@ -649,6 +649,12 @@ namespace PerformanceCalculatorGUI.Screens
                     expectedValue = expectedValues.Total.Value;
                     return true;
                 }
+
+                if (expectedValues.Skills.TryGetValue("pp", out expectedValue))
+                    return true;
+
+                if (expectedValues.Skills.TryGetValue("total", out expectedValue))
+                    return true;
 
                 return false;
             }

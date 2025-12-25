@@ -146,6 +146,16 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                     numericAttributes[attribute.Key] = parsed;
             }
 
+            bool migratedExpectedValues = migrateExpectedValues();
+
+            if (numericAttributes.TryGetValue("pp", out double totalPp))
+            {
+                if (!numericAttributes.ContainsKey("total"))
+                    numericAttributes["total"] = totalPp;
+
+                numericAttributes.Remove("pp");
+            }
+
             if (!numericAttributes.Any())
             {
                 expectedValuesContainer.Hide();
@@ -180,7 +190,36 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                     value => setExpectedSkill(attribute.Key, value)));
             }
 
+            if (migratedExpectedValues)
+                scheduleExpectedSave();
+
             updateExpectedValuesState();
+        }
+
+        private bool migrateExpectedValues()
+        {
+            if (expectedValues == null)
+                return false;
+
+            bool migrated = false;
+
+            if (!expectedValues.Total.HasValue)
+            {
+                if (expectedValues.Skills.TryGetValue("pp", out double totalValue))
+                {
+                    expectedValues.Total = totalValue;
+                    expectedValues.Skills.Remove("pp");
+                    migrated = true;
+                }
+                else if (expectedValues.Skills.TryGetValue("total", out totalValue))
+                {
+                    expectedValues.Total = totalValue;
+                    expectedValues.Skills.Remove("total");
+                    migrated = true;
+                }
+            }
+
+            return migrated;
         }
 
         private Drawable createExpectedHeader()
