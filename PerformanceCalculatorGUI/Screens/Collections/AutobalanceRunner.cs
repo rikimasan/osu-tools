@@ -5,8 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using MathNet.Numerics;
 using MathNet.Numerics.LinearAlgebra;
-using MathNet.Numerics.Optimization;
 using osu.Framework.Logging;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Rulesets;
@@ -21,8 +21,16 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 {
     public class AutobalanceRunner
     {
-        private const int max_iterations = 10000;
-        private const double tolerance = 0.01;
+        private const int max_iterations = 500;
+
+        private const double gradient_tolerance = 1e-2;
+        private const double parameter_tolerance = 1e-2;
+        private const double function_progress_tolerance = 1e-8;
+
+        private const double big_penalty = 1e12;
+
+        private const double bound_lower_factor = 0.33;
+        private const double bound_upper_factor = 3.0;
 
         private readonly ScoreCache scoreCache;
         private readonly RulesetStore rulesets;
@@ -50,16 +58,83 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 if (dataset.Count == 0)
                     return AutobalanceResult.Failure($"No expected values found for {getTargetLabel(target)}.");
 
-                var objective = ObjectiveFunction.Value(point => evaluateAutobalance(dataset, selectedParameters, baseTuning, target, point));
-                var initialGuess = Vector<double>.Build.Dense(selectedParameters.Length, i => selectedParameters[i].Getter(baseTuning));
+                selectedParameters = selectedParameters.Where(p => !p.IsInteger).ToArray();
 
-                var solver = new NelderMeadSimplex(tolerance, max_iterations);
-                var result = solver.FindMinimum(objective, initialGuess);
-                var balancedTuning = applyAutobalanceParameters(baseTuning, selectedParameters, result.MinimizingPoint);
-                double rmse = Math.Sqrt(result.FunctionInfoAtMinimum.Value);
+                if (selectedParameters.Length == 0)
+                {
+                    var empty = Vector<double>.Build.Dense(0);
+                    double mse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, empty);
+                    double rmse = Math.Sqrt(mse);
+                    return AutobalanceResult.Success(baseTuning, rmse, dataset.Count);
+                }
 
-                return AutobalanceResult.Success(balancedTuning, rmse, dataset.Count);
+                int n = selectedParameters.Length;
+
+                var initialGuess = Vector<double>.Build.Dense(n, i => selectedParameters[i].Getter(baseTuning));
+
+                var (lowerBound, upperBound) = buildBounds(selectedParameters, baseTuning);
+                initialGuess = clamp(initialGuess, lowerBound, upperBound);
+
+                Func<Vector<double>, double> f = point => evaluateAutobalance(dataset, selectedParameters, baseTuning, target, point);
+
+                var minimizingPoint = FindMinimum.OfFunctionConstrained(
+                    f,
+                    lowerBound,
+                    upperBound,
+                    initialGuess,
+                    gradient_tolerance,
+                    parameter_tolerance,
+                    function_progress_tolerance,
+                    max_iterations);
+
+                var balancedTuning = applyAutobalanceParameters(baseTuning, selectedParameters, minimizingPoint);
+
+                // FindMinimum returns only the point, not the function value, so we evaluate once more.
+                double mseAtMin = f(minimizingPoint);
+                double rmseAtMin = Math.Sqrt(mseAtMin);
+
+                return AutobalanceResult.Success(balancedTuning, rmseAtMin, dataset.Count);
             });
+        }
+
+        private static (Vector<double> lower, Vector<double> upper) buildBounds(AutobalanceParameter[] parameters, OsuDifficultyTuning baseTuning)
+        {
+            int n = parameters.Length;
+
+            var lower = Vector<double>.Build.Dense(n);
+            var upper = Vector<double>.Build.Dense(n);
+
+            for (int i = 0; i < n; i++)
+            {
+                double min = parameters[i].MinValue;
+
+                double baseVal = parameters[i].Getter(baseTuning);
+                if (double.IsNaN(baseVal) || double.IsInfinity(baseVal))
+                    baseVal = 1.0;
+
+
+                double lo = Math.Max(min, baseVal * bound_lower_factor);
+                double hi = Math.Max(baseVal * bound_upper_factor, min * bound_upper_factor);
+
+                if (double.IsNaN(lo) || double.IsInfinity(lo))
+                    lo = min;
+
+                if (double.IsNaN(hi) || double.IsInfinity(hi) || hi <= lo)
+                    hi = lo + Math.Max(1e-6, Math.Abs(lo) * 0.1);
+
+                lower[i] = lo;
+                upper[i] = hi;
+            }
+
+            return (lower, upper);
+        }
+
+        private static Vector<double> clamp(Vector<double> x, Vector<double> lower, Vector<double> upper)
+        {
+            var y = x.Clone();
+            for (int i = 0; i < y.Count; i++)
+                y[i] = Math.Min(Math.Max(y[i], lower[i]), upper[i]);
+            return y;
         }
 
         private async Task<List<AutobalanceScoreData>> buildAutobalanceDataset(Collection collection, AutobalanceTarget target)
@@ -124,7 +199,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 var performanceCalculator = ruleset.CreatePerformanceCalculator();
 
                 if (performanceCalculator == null)
-                    return double.PositiveInfinity;
+                    return big_penalty;
 
                 double errorSum = 0;
                 int count = 0;
@@ -144,11 +219,11 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                     count++;
                 }
 
-                return count > 0 ? errorSum / count : double.PositiveInfinity;
+                return count > 0 ? errorSum / count : big_penalty;
             }
             catch
             {
-                return double.PositiveInfinity;
+                return big_penalty;
             }
         }
 
