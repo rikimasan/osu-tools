@@ -59,11 +59,11 @@ namespace PerformanceCalculatorGUI.Configuration
         public static readonly IReadOnlyList<OsuDifficultyTuningSection> Sections = new[]
         {
             new OsuDifficultyTuningSection("Performance scales",
-                OsuDifficultyTuningParameter.ForDouble("Aim perf scale", "Aim perf", t => t.AimPerformanceScale, (t, v) => t with { AimPerformanceScale = v }, true),
-                OsuDifficultyTuningParameter.ForDouble("Speed perf scale", "Speed perf", t => t.SpeedPerformanceScale, (t, v) => t with { SpeedPerformanceScale = v }, true),
-                OsuDifficultyTuningParameter.ForDouble("Accuracy perf scale", "Accuracy perf", t => t.AccuracyPerformanceScale, (t, v) => t with { AccuracyPerformanceScale = v }, true),
+                OsuDifficultyTuningParameter.ForDouble("Aim perf scale", "Aim perf", t => t.AimPerformanceScale, (t, v) => t with { AimPerformanceScale = v }, false),
+                OsuDifficultyTuningParameter.ForDouble("Speed perf scale", "Speed perf", t => t.SpeedPerformanceScale, (t, v) => t with { SpeedPerformanceScale = v }, false),
+                OsuDifficultyTuningParameter.ForDouble("Accuracy perf scale", "Accuracy perf", t => t.AccuracyPerformanceScale, (t, v) => t with { AccuracyPerformanceScale = v }, false),
                 OsuDifficultyTuningParameter.ForDouble("Flashlight perf scale", "Flashlight perf", t => t.FlashlightPerformanceScale, (t, v) => t with { FlashlightPerformanceScale = v }, false),
-                OsuDifficultyTuningParameter.ForDouble("Total perf scale", "Total perf", t => t.TotalPerformanceScale, (t, v) => t with { TotalPerformanceScale = v }, true)
+                OsuDifficultyTuningParameter.ForDouble("Total perf scale", "Total perf", t => t.TotalPerformanceScale, (t, v) => t with { TotalPerformanceScale = v }, false)
             ),
             new OsuDifficultyTuningSection("Skill strain scales",
                 OsuDifficultyTuningParameter.ForDouble("Aim strain scale", "Aim strain", t => t.AimSkillStrainScale, (t, v) => t with { AimSkillStrainScale = v }, true),
@@ -75,7 +75,7 @@ namespace PerformanceCalculatorGUI.Configuration
                 OsuDifficultyTuningParameter.ForDouble("Aim acute angle", "Aim acute angle", t => t.AimAcuteAngleScale, (t, v) => t with { AimAcuteAngleScale = v }, true),
                 OsuDifficultyTuningParameter.ForDouble("Aim slider bonus", "Aim slider bonus", t => t.AimSliderBonusScale, (t, v) => t with { AimSliderBonusScale = v }, true),
                 OsuDifficultyTuningParameter.ForDouble("Aim velocity bonus", "Aim velocity bonus", t => t.AimVelocityChangeBonusScale, (t, v) => t with { AimVelocityChangeBonusScale = v }, true),
-                OsuDifficultyTuningParameter.ForDouble("Aim wiggle bonus", "Aim wiggle bonus", t => t.AimWiggleBonusScale, (t, v) => t with { AimWiggleBonusScale = v }, true)
+                OsuDifficultyTuningParameter.ForDouble("Aim wiggle bonus", "Aim wiggle bonus", t => t.AimWiggleBonusScale, (t, v) => t with { AimWiggleBonusScale = v }, false)
             ),
             new OsuDifficultyTuningSection("Flashlight bonuses",
                 OsuDifficultyTuningParameter.ForDouble("FL max opacity", "Flashlight max opacity", t => t.FlashlightMaxOpacityBonusScale, (t, v) => t with { FlashlightMaxOpacityBonusScale = v }, false),
@@ -85,8 +85,8 @@ namespace PerformanceCalculatorGUI.Configuration
                 OsuDifficultyTuningParameter.ForDouble("FL min angle", "Flashlight min angle", t => t.FlashlightMinAngleScale, (t, v) => t with { FlashlightMinAngleScale = v }, false)
             ),
             new OsuDifficultyTuningSection("Rhythm tuning",
-                OsuDifficultyTuningParameter.ForInt("Rhythm time max (ms)", "Rhythm history ms", t => t.RhythmHistoryTimeMax, (t, v) => t with { RhythmHistoryTimeMax = v }, true),
-                OsuDifficultyTuningParameter.ForInt("Rhythm objects max", "Rhythm history objs", t => t.RhythmHistoryObjectsMax, (t, v) => t with { RhythmHistoryObjectsMax = v }, true),
+                OsuDifficultyTuningParameter.ForInt("Rhythm time max (ms)", "Rhythm history ms", t => t.RhythmHistoryTimeMax, (t, v) => t with { RhythmHistoryTimeMax = v }, false),
+                OsuDifficultyTuningParameter.ForInt("Rhythm objects max", "Rhythm history objs", t => t.RhythmHistoryObjectsMax, (t, v) => t with { RhythmHistoryObjectsMax = v }, false),
                 OsuDifficultyTuningParameter.ForDouble("Rhythm overall scale", "Rhythm overall", t => t.RhythmOverallScale, (t, v) => t with { RhythmOverallScale = v }, true),
                 OsuDifficultyTuningParameter.ForDouble("Rhythm ratio scale", "Rhythm ratio", t => t.RhythmRatioScale, (t, v) => t with { RhythmRatioScale = v }, true)
             ),

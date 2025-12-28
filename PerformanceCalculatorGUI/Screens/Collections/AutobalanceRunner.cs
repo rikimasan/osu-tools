@@ -23,7 +23,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
     public class AutobalanceRunner
     {
         private const int max_iterations = 500;
-        private const double dataset_progress_portion = 0.25;
+        private const double dataset_progress_portion = 0.05;
 
         private const double gradient_tolerance = 1e-2;
         private const double parameter_tolerance = 1e-2;
@@ -137,7 +137,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 
                     evalCount++;
 
-                    double opt = Math.Min(evalCount / (double)max_iterations, 0.99);
+                    double opt = Math.Min(evalCount / (double)max_iterations, 0.727);
                     double combined = dataset_progress_portion + (1.0 - dataset_progress_portion) * opt;
 
                     reporter.Report(combined);
