@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -18,6 +19,7 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Logging;
+using osu.Framework.Threading;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
@@ -74,6 +76,12 @@ namespace PerformanceCalculatorGUI.Screens
         private FillFlowContainer autobalanceParametersContainer = null!;
         private OsuSpriteText autobalanceStatusText = null!;
         private RoundedButton autobalanceRunButton = null!;
+        private Container autobalanceProgressBar = null!;
+        private Box autobalanceProgressFill = null!;
+        private OsuSpriteText autobalanceTimeText = null!;
+        private string autobalanceStage = "Ready";
+        private readonly Stopwatch autobalanceStopwatch = new Stopwatch();
+        private ScheduledDelegate? autobalanceElapsedUpdate;
         private readonly Bindable<AutobalanceTarget> autobalanceTarget = new Bindable<AutobalanceTarget>(AutobalanceTarget.Total);
         private readonly Dictionary<AutobalanceParameter, BindableBool> autobalanceParameterStates = new Dictionary<AutobalanceParameter, BindableBool>();
         private bool autobalanceRunning;
@@ -266,6 +274,38 @@ namespace PerformanceCalculatorGUI.Screens
                                                                             Text = "Ready"
                                                                         }
                                                                     }
+                                                                },
+                                                                autobalanceProgressBar = new Container
+                                                                {
+                                                                    RelativeSizeAxes = Axes.X,
+                                                                    Height = 6,
+                                                                    Masking = true,
+                                                                    CornerRadius = 3,
+                                                                    Margin = new MarginPadding { Top = 4 },
+                                                                    Children = new Drawable[]
+                                                                    {
+                                                                        new Box
+                                                                        {
+                                                                            RelativeSizeAxes = Axes.Both,
+                                                                            Colour = colourProvider.Background6.Lighten(0.1f),
+                                                                            Alpha = 0.6f
+                                                                        },
+                                                                        autobalanceProgressFill = new Box
+                                                                        {
+                                                                            RelativeSizeAxes = Axes.Both,
+                                                                            Anchor = Anchor.CentreLeft,
+                                                                            Origin = Anchor.CentreLeft,
+                                                                            Width = 0,
+                                                                            Height = 1,
+                                                                            Colour = colourProvider.Background1
+                                                                        }
+                                                                    }
+                                                                },
+                                                                autobalanceTimeText = new OsuSpriteText
+                                                                {
+                                                                    Font = OsuFont.GetFont(size: 12, weight: FontWeight.SemiBold),
+                                                                    Colour = colourProvider.Light2,
+                                                                    Text = string.Empty
                                                                 }
                                                             }
                                                         }
@@ -342,7 +382,7 @@ namespace PerformanceCalculatorGUI.Screens
             obj.NewValue.ExpectedPerformance ??= new Dictionary<long, ExpectedPerformanceValues>();
             collectionNameText.Text = obj.NewValue!.Name;
             collectionContainer.Show();
-            autobalanceStatusText.Text = "Ready";
+            resetAutobalanceUi();
 
             calculateScores();
         }
@@ -485,7 +525,7 @@ namespace PerformanceCalculatorGUI.Screens
             var collection = currentCollection.Value;
             var target = autobalanceTarget.Value;
 
-            autobalanceRunner.RunAsync(collection, target, selectedParameters, tuningManager.Current.Value).ContinueWith(t =>
+            autobalanceRunner.RunAsync(collection, target, selectedParameters, tuningManager.Current.Value, onAutobalanceProgress).ContinueWith(t =>
             {
                 if (t.Exception != null)
                     Logger.Log(t.Exception.ToString(), level: LogLevel.Error);
@@ -508,19 +548,89 @@ namespace PerformanceCalculatorGUI.Screens
                     }
 
                     tuningManager.Current.Value = result.Tuning!;
+                    setAutobalanceProgress(1);
                     setAutobalanceState(false, $"RMSE {result.Rmse:0.##}pp ({result.SampleCount} scores)");
                 });
             }, TaskContinuationOptions.None);
+        }
+
+        private void resetAutobalanceUi()
+        {
+            autobalanceStage = "Ready";
+            autobalanceStatusText.Text = autobalanceStage;
+            autobalanceTimeText.Text = string.Empty;
+            setAutobalanceProgress(0);
+        }
+
+        private void setAutobalanceProgress(double progress)
+        {
+            autobalanceProgressFill.Width = (float)Math.Clamp(progress, 0, 1);
+        }
+
+        private void updateAutobalanceElapsed()
+        {
+            if (!autobalanceRunning)
+                return;
+
+            autobalanceTimeText.Text = $"Elapsed {formatElapsed(autobalanceStopwatch.Elapsed)}";
+        }
+
+        private static string formatElapsed(TimeSpan elapsed)
+        {
+            if (elapsed.TotalHours >= 1)
+                return elapsed.ToString(@"h\:mm\:ss");
+            if (elapsed.TotalMinutes >= 1)
+                return elapsed.ToString(@"m\:ss\.f");
+            return $"{elapsed.TotalSeconds:0.0}s";
+        }
+
+        private void onAutobalanceProgress(AutobalanceProgress progress)
+        {
+            Schedule(() =>
+            {
+                if (!autobalanceRunning)
+                    return;
+
+                setAutobalanceProgress(progress.Value);
+
+                if (!string.IsNullOrEmpty(progress.Stage))
+                    autobalanceStage = progress.Stage;
+
+                string percent = $"{progress.Value:0%}";
+
+                if (progress.Total.HasValue && progress.Total.Value > 0 && progress.Completed.HasValue)
+                    autobalanceStatusText.Text = $"{autobalanceStage} {progress.Completed.Value}/{progress.Total.Value} ({percent})";
+                else
+                    autobalanceStatusText.Text = $"{autobalanceStage} ({percent})";
+            });
         }
 
         private void setAutobalanceState(bool running, string status)
         {
             autobalanceRunning = running;
             autobalanceRunButton.Enabled.Value = !running;
+            autobalanceStage = status;
             autobalanceStatusText.Text = status;
 
             if (running)
+            {
+                autobalanceStopwatch.Restart();
+                autobalanceTimeText.Text = "Elapsed 0.0s";
+                setAutobalanceProgress(0);
+
+                autobalanceElapsedUpdate?.Cancel();
+                autobalanceElapsedUpdate = Scheduler.AddDelayed(updateAutobalanceElapsed, 100, true);
+
                 loadingLayer.Show();
+            }
+            else
+            {
+                autobalanceElapsedUpdate?.Cancel();
+                autobalanceElapsedUpdate = null;
+
+                autobalanceStopwatch.Stop();
+                autobalanceTimeText.Text = $"Took {formatElapsed(autobalanceStopwatch.Elapsed)}";
+            }
         }
 
         private void onCollectionAdd(string name)
