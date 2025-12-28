@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using MathNet.Numerics;
@@ -22,6 +23,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
     public class AutobalanceRunner
     {
         private const int max_iterations = 500;
+        private const double dataset_progress_portion = 0.25;
 
         private const double gradient_tolerance = 1e-2;
         private const double parameter_tolerance = 1e-2;
@@ -50,21 +52,71 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         private static AutobalanceParameter[] createAutobalanceParameters() =>
             OsuDifficultyTuningParameters.All.Select(parameter => new AutobalanceParameter(parameter)).ToArray();
 
-        public Task<AutobalanceResult> RunAsync(Collection collection, AutobalanceTarget target, AutobalanceParameter[] selectedParameters, OsuDifficultyTuning baseTuning)
+        private sealed class ProgressReporter
+        {
+            private readonly Action<AutobalanceProgress>? callback;
+
+            private double lastValue = -1;
+            private string? lastStage;
+            private long lastReportTicks;
+
+            public ProgressReporter(Action<AutobalanceProgress>? callback)
+            {
+                this.callback = callback;
+                lastReportTicks = Stopwatch.GetTimestamp();
+            }
+
+            public void Report(double value, string? stage = null, int? completed = null, int? total = null)
+            {
+                if (callback == null)
+                    return;
+
+                value = Math.Clamp(value, 0, 1);
+
+                long now = Stopwatch.GetTimestamp();
+                double msSinceLast = (now - lastReportTicks) * 1000.0 / Stopwatch.Frequency;
+
+                bool stageChanged = stage != null && stage != lastStage;
+                bool valueChanged = Math.Abs(value - lastValue) >= 0.0025;
+                bool force = value >= 1 || stageChanged;
+
+                if (!force && msSinceLast < 200 && !valueChanged)
+                    return;
+
+                lastReportTicks = now;
+                lastValue = value;
+
+                if (stage != null)
+                    lastStage = stage;
+
+                callback(new AutobalanceProgress(value, stage, completed, total));
+            }
+        }
+
+        public Task<AutobalanceResult> RunAsync(Collection collection, AutobalanceTarget target, AutobalanceParameter[] selectedParameters,
+                                                OsuDifficultyTuning baseTuning, Action<AutobalanceProgress>? progress = null)
         {
             return Task.Run(async () =>
             {
-                var dataset = await buildAutobalanceDataset(collection, target).ConfigureAwait(false);
+                var reporter = new ProgressReporter(progress);
+                reporter.Report(0, stage: "Preparing...");
+
+                var dataset = await buildAutobalanceDataset(collection, target, reporter).ConfigureAwait(false);
                 if (dataset.Count == 0)
+                {
+                    reporter.Report(1, stage: "Failed");
                     return AutobalanceResult.Failure($"No expected values found for {getTargetLabel(target)}.");
+                }
 
                 selectedParameters = selectedParameters.Where(p => !p.IsInteger).ToArray();
 
                 if (selectedParameters.Length == 0)
                 {
+                    reporter.Report(dataset_progress_portion, stage: "Evaluating...");
                     var empty = Vector<double>.Build.Dense(0);
                     double mse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, empty);
                     double rmse = Math.Sqrt(mse);
+                    reporter.Report(1, stage: "Done");
                     return AutobalanceResult.Success(baseTuning, rmse, dataset.Count);
                 }
 
@@ -75,7 +127,22 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 var (lowerBound, upperBound) = buildBounds(selectedParameters, baseTuning);
                 initialGuess = clamp(initialGuess, lowerBound, upperBound);
 
-                Func<Vector<double>, double> f = point => evaluateAutobalance(dataset, selectedParameters, baseTuning, target, point);
+                int evalCount = 0;
+
+                reporter.Report(dataset_progress_portion, stage: "Optimizing...");
+
+                Func<Vector<double>, double> f = point =>
+                {
+                    double mse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, point);
+
+                    evalCount++;
+
+                    double opt = Math.Min(evalCount / (double)max_iterations, 0.99);
+                    double combined = dataset_progress_portion + (1.0 - dataset_progress_portion) * opt;
+
+                    reporter.Report(combined);
+                    return mse;
+                };
 
                 var minimizingPoint = FindMinimum.OfFunctionConstrained(
                     f,
@@ -93,6 +160,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 double mseAtMin = f(minimizingPoint);
                 double rmseAtMin = Math.Sqrt(mseAtMin);
 
+                reporter.Report(1, stage: "Done");
                 return AutobalanceResult.Success(balancedTuning, rmseAtMin, dataset.Count);
             });
         }
@@ -137,17 +205,35 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             return y;
         }
 
-        private async Task<List<AutobalanceScoreData>> buildAutobalanceDataset(Collection collection, AutobalanceTarget target)
+        private async Task<List<AutobalanceScoreData>> buildAutobalanceDataset(Collection collection, AutobalanceTarget target, ProgressReporter reporter)
         {
             var dataset = new List<AutobalanceScoreData>();
 
-            foreach (long scoreId in collection.Scores)
+            int total = collection.Scores.Length;
+
+            reporter.Report(0, stage: "Loading scores", completed: 0, total: total);
+
+            if (total == 0)
             {
+                reporter.Report(dataset_progress_portion, stage: "Loading scores", completed: 0, total: 0);
+                return dataset;
+            }
+
+            for (int i = 0; i < total; i++)
+            {
+                long scoreId = collection.Scores[i];
+
                 if (!collection.ExpectedPerformance.TryGetValue(scoreId, out var expectedValues))
+                {
+                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
                     continue;
+                }
 
                 if (!tryGetExpectedValue(expectedValues, target, out double expectedValue))
+                {
+                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
                     continue;
+                }
 
                 SoloScoreInfo? score = null;
 
@@ -161,11 +247,17 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 }
 
                 if (score == null)
+                {
+                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
                     continue;
+                }
 
                 var rulesetInfo = rulesets.GetRuleset(score.RulesetID);
                 if (rulesetInfo?.ShortName != "osu")
+                {
+                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
                     continue;
+                }
 
                 ProcessorWorkingBeatmap working;
 
@@ -176,6 +268,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 catch (Exception e)
                 {
                     Logger.Log(e.ToString(), level: LogLevel.Error);
+                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
                     continue;
                 }
 
@@ -184,8 +277,11 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 var mods = score.Mods.Select(x => x.ToMod(rulesetInfo.CreateInstance())).ToArray();
 
                 dataset.Add(new AutobalanceScoreData(working, mods, parsedScore.ScoreInfo, expectedValue));
+
+                reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
             }
 
+            reporter.Report(dataset_progress_portion, stage: $"Dataset ready ({dataset.Count} scores)");
             return dataset;
         }
 
@@ -369,6 +465,22 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             Mods = mods;
             ScoreInfo = scoreInfo;
             ExpectedValue = expectedValue;
+        }
+    }
+
+    public readonly struct AutobalanceProgress
+    {
+        public double Value { get; }
+        public string? Stage { get; }
+        public int? Completed { get; }
+        public int? Total { get; }
+
+        public AutobalanceProgress(double value, string? stage = null, int? completed = null, int? total = null)
+        {
+            Value = value;
+            Stage = stage;
+            Completed = completed;
+            Total = total;
         }
     }
 
