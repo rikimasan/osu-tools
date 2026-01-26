@@ -17,7 +17,7 @@ namespace PerformanceCalculatorGUI
         private Skill[] skills = [];
         private DifficultyHitObject[] difficultyHitObjects = [];
 
-        public ExtendedOsuDifficultyCalculator(IRulesetInfo ruleset, IWorkingBeatmap beatmap, OsuDifficultyTuning? tuning = null)
+        public ExtendedOsuDifficultyCalculator(IRulesetInfo ruleset, IWorkingBeatmap beatmap, OsuDifficultyConstants? tuning = null)
             : base(ruleset, beatmap, tuning)
         {
         }

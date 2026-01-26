@@ -23,7 +23,7 @@ namespace PerformanceCalculatorGUI
 {
     public static class RulesetHelper
     {
-        public static DifficultyCalculator GetExtendedDifficultyCalculator(RulesetInfo ruleset, IWorkingBeatmap working, OsuDifficultyTuning? osuTuning = null)
+        public static DifficultyCalculator GetExtendedDifficultyCalculator(RulesetInfo ruleset, IWorkingBeatmap working, OsuDifficultyConstants? osuTuning = null)
         {
             return ruleset.OnlineID switch
             {

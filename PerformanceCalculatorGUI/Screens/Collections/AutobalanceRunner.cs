@@ -94,7 +94,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         }
 
         public Task<AutobalanceResult> RunAsync(Collection collection, AutobalanceTarget target, AutobalanceParameter[] selectedParameters,
-                                                OsuDifficultyTuning baseTuning, Action<AutobalanceProgress>? progress = null)
+                                                OsuDifficultyConstants baseTuning, Action<AutobalanceProgress>? progress = null)
         {
             return Task.Run(async () =>
             {
@@ -165,7 +165,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             });
         }
 
-        private static (Vector<double> lower, Vector<double> upper) buildBounds(AutobalanceParameter[] parameters, OsuDifficultyTuning baseTuning)
+        private static (Vector<double> lower, Vector<double> upper) buildBounds(AutobalanceParameter[] parameters, OsuDifficultyConstants baseTuning)
         {
             int n = parameters.Length;
 
@@ -285,7 +285,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             return dataset;
         }
 
-        private double evaluateAutobalance(IReadOnlyList<AutobalanceScoreData> dataset, AutobalanceParameter[] parameters, OsuDifficultyTuning baseTuning,
+        private double evaluateAutobalance(IReadOnlyList<AutobalanceScoreData> dataset, AutobalanceParameter[] parameters, OsuDifficultyConstants baseTuning,
                                            AutobalanceTarget target, Vector<double> values)
         {
             try
@@ -323,7 +323,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             }
         }
 
-        private static OsuDifficultyTuning applyAutobalanceParameters(OsuDifficultyTuning baseTuning, AutobalanceParameter[] parameters, Vector<double> values)
+        private static OsuDifficultyConstants applyAutobalanceParameters(OsuDifficultyConstants baseTuning, AutobalanceParameter[] parameters, Vector<double> values)
         {
             var tuning = baseTuning;
 
@@ -371,6 +371,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 AutobalanceTarget.Aim => (attributes as OsuPerformanceAttributes)?.Aim,
                 AutobalanceTarget.Speed => (attributes as OsuPerformanceAttributes)?.Speed,
                 AutobalanceTarget.Accuracy => (attributes as OsuPerformanceAttributes)?.Accuracy,
+                AutobalanceTarget.Reading => (attributes as OsuPerformanceAttributes)?.Reading,
                 AutobalanceTarget.Flashlight => (attributes as OsuPerformanceAttributes)?.Flashlight,
                 _ => null
             };
@@ -384,6 +385,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 AutobalanceTarget.Aim => "aim",
                 AutobalanceTarget.Speed => "speed",
                 AutobalanceTarget.Accuracy => "accuracy",
+                AutobalanceTarget.Reading => "reading",
                 AutobalanceTarget.Flashlight => "flashlight",
                 _ => "total"
             };
@@ -397,6 +399,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 AutobalanceTarget.Aim => "aim",
                 AutobalanceTarget.Speed => "speed",
                 AutobalanceTarget.Accuracy => "accuracy",
+                AutobalanceTarget.Reading => "reading",
                 AutobalanceTarget.Flashlight => "flashlight",
                 _ => "total"
             };
@@ -413,6 +416,8 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         Speed,
         [System.ComponentModel.Description("Accuracy")]
         Accuracy,
+        [System.ComponentModel.Description("Reading")]
+        Reading,
         [System.ComponentModel.Description("Flashlight")]
         Flashlight
     }
@@ -420,8 +425,8 @@ namespace PerformanceCalculatorGUI.Screens.Collections
     public sealed class AutobalanceParameter
     {
         public string Label { get; }
-        public Func<OsuDifficultyTuning, double> Getter { get; }
-        public Func<OsuDifficultyTuning, double, OsuDifficultyTuning> Setter { get; }
+        public Func<OsuDifficultyConstants, double> Getter { get; }
+        public Func<OsuDifficultyConstants, double, OsuDifficultyConstants> Setter { get; }
         public double MinValue { get; }
         public bool IsInteger { get; }
         public bool DefaultEnabled { get; }
@@ -436,7 +441,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             DefaultEnabled = definition.DefaultEnabled;
         }
 
-        public OsuDifficultyTuning Apply(OsuDifficultyTuning tuning, double value)
+        public OsuDifficultyConstants Apply(OsuDifficultyConstants tuning, double value)
         {
             if (double.IsNaN(value) || double.IsInfinity(value))
                 return tuning;
@@ -487,12 +492,12 @@ namespace PerformanceCalculatorGUI.Screens.Collections
     public readonly struct AutobalanceResult
     {
         public bool IsFailure { get; }
-        public OsuDifficultyTuning? Tuning { get; }
+        public OsuDifficultyConstants? Tuning { get; }
         public double Rmse { get; }
         public int SampleCount { get; }
         public string? ErrorMessage { get; }
 
-        private AutobalanceResult(OsuDifficultyTuning tuning, double rmse, int sampleCount)
+        private AutobalanceResult(OsuDifficultyConstants tuning, double rmse, int sampleCount)
         {
             IsFailure = false;
             Tuning = tuning;
@@ -510,7 +515,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             ErrorMessage = errorMessage;
         }
 
-        public static AutobalanceResult Success(OsuDifficultyTuning tuning, double rmse, int sampleCount) => new AutobalanceResult(tuning, rmse, sampleCount);
+        public static AutobalanceResult Success(OsuDifficultyConstants tuning, double rmse, int sampleCount) => new AutobalanceResult(tuning, rmse, sampleCount);
         public static AutobalanceResult Failure(string errorMessage) => new AutobalanceResult(errorMessage);
     }
 }

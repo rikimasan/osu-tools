@@ -8,6 +8,6 @@ namespace PerformanceCalculatorGUI.Configuration
 {
     public class OsuDifficultyTuningManager
     {
-        public Bindable<OsuDifficultyTuning> Current { get; } = new Bindable<OsuDifficultyTuning>(OsuDifficultyTuning.Default);
+        public Bindable<OsuDifficultyConstants> Current { get; } = new Bindable<OsuDifficultyConstants>(OsuDifficultyConstants.Default);
     }
 }

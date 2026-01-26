@@ -204,7 +204,7 @@ namespace PerformanceCalculatorGUI.Components
             };
         }
 
-        private GridContainer createSectionGrid(OsuDifficultyTuningSection section, OsuDifficultyTuning initialTuning)
+        private GridContainer createSectionGrid(OsuDifficultyTuningSection section, OsuDifficultyConstants initialTuning)
         {
             int rows = (section.Parameters.Count + 1) / 2;
             var rowDimensions = new Dimension[rows];
@@ -240,7 +240,7 @@ namespace PerformanceCalculatorGUI.Components
             };
         }
 
-        private Drawable createControl(OsuDifficultyTuningParameter parameter, OsuDifficultyTuning initialTuning)
+        private Drawable createControl(OsuDifficultyTuningParameter parameter, OsuDifficultyConstants initialTuning)
         {
             TuningControl control;
 
@@ -270,7 +270,7 @@ namespace PerformanceCalculatorGUI.Components
 
         private void resetToDefaults()
         {
-            applyTuning(OsuDifficultyTuning.Default);
+            applyTuning(OsuDifficultyConstants.Default);
         }
 
         private LimitedLabelledFractionalNumberBox createTuningBox(string label, double defaultValue)
@@ -314,7 +314,7 @@ namespace PerformanceCalculatorGUI.Components
             box.Value.Value = value;
         }
 
-        private OsuDifficultyTuning buildTuningFromControls()
+        private OsuDifficultyConstants buildTuningFromControls()
         {
             var tuning = tuningManager.Current.Value;
 
@@ -326,7 +326,7 @@ namespace PerformanceCalculatorGUI.Components
             return tuning;
         }
 
-        private void applyTuning(OsuDifficultyTuning tuning)
+        private void applyTuning(OsuDifficultyConstants tuning)
         {
             foreach (var control in tuningControls)
             {
@@ -402,7 +402,7 @@ namespace PerformanceCalculatorGUI.Components
 
             try
             {
-                var tuning = JsonConvert.DeserializeObject<OsuDifficultyTuning>(File.ReadAllText(path));
+                var tuning = JsonConvert.DeserializeObject<OsuDifficultyConstants>(File.ReadAllText(path));
 
                 if (tuning == null)
                 {
