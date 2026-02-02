@@ -346,7 +346,7 @@ namespace PerformanceCalculatorGUI.Screens
                                 continue;
 
                             var perfAttributes = await performanceCalculator.CalculateAsync(parsedScore.ScoreInfo, difficultyAttributes, token).ConfigureAwait(false);
-                            var extendedScore = new ExtendedScore(score, difficultyAttributes, perfAttributes);
+                            var extendedScore = new ExtendedScore(score, scoreInfo, difficultyAttributes, perfAttributes);
                             plays.Add(extendedScore);
                         }
                     }
@@ -382,11 +382,11 @@ namespace PerformanceCalculatorGUI.Screens
                     var filteredPlays = new List<ExtendedScore>();
 
                     // List of all beatmap IDs in plays without duplicates
-                    var beatmapIDs = plays.Select(x => x.SoloScore.BeatmapID).Distinct().ToList();
+                    var beatmapIDs = plays.Select(x => x.SoloScore!.BeatmapID).Distinct().ToList();
 
                     foreach (int id in beatmapIDs)
                     {
-                        var bestPlayOnBeatmap = plays.Where(x => x.SoloScore.BeatmapID == id).OrderByDescending(x => x.PerformanceAttributes?.Total).First();
+                        var bestPlayOnBeatmap = plays.Where(x => x.SoloScore!.BeatmapID == id).OrderByDescending(x => x.PerformanceAttributes?.Total).First();
                         filteredPlays.Add(bestPlayOnBeatmap);
                     }
 

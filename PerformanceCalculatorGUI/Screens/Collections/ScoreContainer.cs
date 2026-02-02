@@ -26,13 +26,14 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 {
     public partial class ScoreContainer : Container
     {
+        public CollectionScoreEntry Entry { get; }
         public ExtendedScore Score { get; }
 
         private readonly IconButton deleteButton;
 
         private readonly IDictionary<long, ExpectedPerformanceValues> expectedValuesByScore;
         private readonly Action onExpectedValuesChanged;
-        private readonly long scoreId;
+        private readonly long? scoreId;
 
         private ExpectedPerformanceValues? expectedValues;
 
@@ -49,20 +50,23 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         [Resolved]
         private OverlayColourProvider colourProvider { get; set; } = null!;
 
-        public delegate void OnDeleteHandler(long scoreId);
+        public delegate void OnDeleteHandler(CollectionScoreEntry entry);
 
         public event OnDeleteHandler? OnDelete;
 
-        public ScoreContainer(ExtendedScore score, long scoreId, IDictionary<long, ExpectedPerformanceValues> expectedValuesByScore, Action onExpectedValuesChanged)
+        public ScoreContainer(CollectionScoreEntry entry, ExtendedScore score, IDictionary<long, ExpectedPerformanceValues> expectedValuesByScore, Action onExpectedValuesChanged)
         {
             RelativeSizeAxes = Axes.X;
             AutoSizeAxes = Axes.Y;
 
+            Entry = entry;
             Score = score;
             this.expectedValuesByScore = expectedValuesByScore;
             this.onExpectedValuesChanged = onExpectedValuesChanged;
-            this.scoreId = scoreId;
-            expectedValuesByScore.TryGetValue(scoreId, out expectedValues);
+            scoreId = entry.ScoreId;
+
+            if (scoreId.HasValue)
+                expectedValuesByScore.TryGetValue(scoreId.Value, out expectedValues);
 
             Child = new FillFlowContainer
             {
@@ -89,7 +93,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                                     Icon = FontAwesome.Regular.TrashAlt,
                                     Action = () =>
                                     {
-                                        OnDelete?.Invoke(scoreId);
+                                        OnDelete?.Invoke(entry);
                                     }
                                 },
                                 new ExtendedProfileScore(score, true)
@@ -136,6 +140,12 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         private void populateExpectedValues()
         {
             expectedValuesContainer.Clear();
+
+            if (!scoreId.HasValue)
+            {
+                expectedValuesContainer.Hide();
+                return;
+            }
 
             var attributes = AttributeConversion.ToDictionary(Score.PerformanceAttributes);
             var numericAttributes = new Dictionary<string, double>();
@@ -383,19 +393,22 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             if (expectedValues != null)
                 return expectedValues;
 
+            if (!scoreId.HasValue)
+                throw new InvalidOperationException("Expected values require a score id.");
+
             expectedValues = new ExpectedPerformanceValues();
-            expectedValuesByScore[scoreId] = expectedValues;
+            expectedValuesByScore[scoreId.Value] = expectedValues;
             return expectedValues;
         }
 
         private void pruneExpectedValuesIfEmpty()
         {
-            if (expectedValues == null)
+            if (expectedValues == null || !scoreId.HasValue)
                 return;
 
             if (expectedValues.Total == null && expectedValues.Skills.Count == 0)
             {
-                expectedValuesByScore.Remove(scoreId);
+                expectedValuesByScore.Remove(scoreId.Value);
                 expectedValues = null;
             }
         }

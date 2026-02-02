@@ -24,12 +24,16 @@ using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterfaceV2;
+using osu.Game.Database;
 using osu.Game.Localisation;
+using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Dialog;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Osu;
+using osu.Game.Rulesets.Scoring;
+using osu.Game.Scoring;
 using osuTK;
 using PerformanceCalculatorGUI.Components;
 using PerformanceCalculatorGUI.Components.TextBoxes;
@@ -352,21 +356,31 @@ namespace PerformanceCalculatorGUI.Screens
 
         private void onScoreAdd(long scoreId)
         {
-            if (currentCollection.Value!.Scores.Contains(scoreId))
+            var collection = currentCollection.Value!;
+            collection.EnsureEntries();
+            var entries = collection.Entries ??= new List<CollectionScoreEntry>();
+
+            if (entries.Any(x => x.ScoreId == scoreId))
             {
                 notificationDisplay.Display(new Notification($"Score {scoreId} already exists"));
                 return;
             }
 
-            currentCollection.Value.Scores = [.. currentCollection.Value.Scores, scoreId];
+            entries.Add(new CollectionScoreEntry { ScoreId = scoreId });
 
             saveCurrentCollection();
         }
 
-        private void onScoreRemove(long scoreId)
+        private void onScoreRemove(CollectionScoreEntry entry)
         {
-            currentCollection.Value!.Scores = currentCollection.Value.Scores.Where(x => x != scoreId).ToArray();
-            currentCollection.Value.ExpectedPerformance.Remove(scoreId);
+            var collection = currentCollection.Value!;
+            collection.EnsureEntries();
+
+            string entryId = entry.EntryId;
+            collection.Entries!.RemoveAll(x => x.EntryId == entryId);
+
+            if (entry.ScoreId.HasValue)
+                collection.ExpectedPerformance.Remove(entry.ScoreId.Value);
 
             saveCurrentCollection();
         }
@@ -379,6 +393,7 @@ namespace PerformanceCalculatorGUI.Screens
                 return;
             }
 
+            obj.NewValue.EnsureEntries();
             obj.NewValue.ExpectedPerformance ??= new Dictionary<long, ExpectedPerformanceValues>();
             collectionNameText.Text = obj.NewValue!.Name;
             collectionContainer.Show();
@@ -429,7 +444,7 @@ namespace PerformanceCalculatorGUI.Screens
         private void saveCollection(Collection collection, bool recalculateScores)
         {
             string path = Path.Combine(collections_directory, collection.FileName);
-
+            collection.EnsureEntries();
             File.WriteAllText(path, JsonConvert.SerializeObject(collection));
 
             if (recalculateScores && collection == currentCollection.Value)
@@ -441,6 +456,10 @@ namespace PerformanceCalculatorGUI.Screens
             if (currentCollection.Value == null)
                 return;
 
+            currentCollection.Value.EnsureEntries();
+            currentCollection.Value.ExpectedPerformance ??= new Dictionary<long, ExpectedPerformanceValues>();
+            var entries = currentCollection.Value.Entries!.ToList();
+
             scoresList.Clear();
 
             loadingLayer.Show();
@@ -449,36 +468,15 @@ namespace PerformanceCalculatorGUI.Screens
 
             Task.Run(async () =>
             {
-                foreach (long scoreId in collection.Scores)
+                foreach (var entry in entries)
                 {
-                    var score = await scoreCache.GetScore(scoreId).ConfigureAwait(false);
-                    if (score == null)
+                    var resolvedScore = await resolveScoreEntry(entry).ConfigureAwait(false);
+                    if (resolvedScore == null)
                         continue;
 
-                    var rulesetInfo = rulesets.GetRuleset(score.RulesetID)!;
-                    var rulesetInstance = rulesetInfo.ShortName == "osu"
-                        ? new OsuRuleset(tuningManager.Current.Value)
-                        : rulesetInfo.CreateInstance();
-
-                    var working = ProcessorWorkingBeatmap.FromFileOrId(score.BeatmapID.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
-
-                    Mod[] mods = score.Mods.Select(x => x.ToMod(rulesetInstance)).ToArray();
-
-                    var scoreInfo = score.ToScoreInfo(rulesets, working.BeatmapInfo);
-
-                    var parsedScore = new ProcessorScoreDecoder(working).Parse(scoreInfo);
-
-                    var difficultyCalculator = rulesetInstance.CreateDifficultyCalculator(working);
-                    var difficultyAttributes = difficultyCalculator.Calculate(mods);
-                    var performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
-                    if (performanceCalculator == null)
-                        continue;
-
-                    var perfAttributes = performanceCalculator.Calculate(parsedScore.ScoreInfo, difficultyAttributes);
                     Schedule(() =>
                     {
-                        var scoreContainer = new ScoreContainer(new ExtendedScore(score, difficultyAttributes, perfAttributes), scoreId,
-                            collection.ExpectedPerformance, () => saveCollection(collection, false));
+                        var scoreContainer = new ScoreContainer(entry, resolvedScore, collection.ExpectedPerformance, () => saveCollection(collection, false));
                         scoreContainer.OnDelete += onScoreRemove;
 
                         scoresList.Add(scoreContainer);
@@ -633,6 +631,72 @@ namespace PerformanceCalculatorGUI.Screens
             }
         }
 
+        private async Task<ExtendedScore?> resolveScoreEntry(CollectionScoreEntry entry)
+        {
+            SoloScoreInfo? apiScore = null;
+
+            if (entry.ScoreId is long scoreId)
+                apiScore = await scoreCache.GetScore(scoreId).ConfigureAwait(false);
+
+            Ruleset rulesetInstance;
+            ProcessorWorkingBeatmap working;
+            Mod[] mods;
+            ScoreInfo scoreInfo;
+
+            if (apiScore != null)
+            {
+                var rulesetInfo = rulesets.GetRuleset(apiScore.RulesetID)!;
+                rulesetInstance = rulesetInfo.ShortName == "osu"
+                    ? new OsuRuleset(tuningManager.Current.Value)
+                    : rulesetInfo.CreateInstance();
+                working = ProcessorWorkingBeatmap.FromFileOrId(apiScore.BeatmapID.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
+
+                mods = apiScore.Mods.Select(x => x.ToMod(rulesetInstance)).ToArray();
+                scoreInfo = apiScore.ToScoreInfo(rulesets, working.BeatmapInfo);
+                scoreInfo.Ruleset = rulesetInfo;
+                scoreInfo.Mods = mods;
+            }
+            else
+            {
+                var rulesetInfo = rulesets.GetRuleset(entry.RulesetId)!;
+                rulesetInstance = rulesetInfo.ShortName == "osu"
+                    ? new OsuRuleset(tuningManager.Current.Value)
+                    : rulesetInfo.CreateInstance();
+                working = ProcessorWorkingBeatmap.FromFileOrId(entry.BeatmapId.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
+                mods = CollectionModSerializer.Deserialize(entry.Mods, rulesetInstance);
+
+                scoreInfo = new ScoreInfo(working.BeatmapInfo, rulesetInfo)
+                {
+                    Accuracy = entry.Accuracy,
+                    MaxCombo = entry.MaxCombo,
+                    Statistics = entry.Statistics ?? new Dictionary<HitResult, int>(),
+                    Mods = mods,
+                    TotalScore = entry.TotalScore,
+                    LegacyTotalScore = entry.LegacyTotalScore,
+                    Ruleset = rulesetInfo,
+                    Date = entry.EndedAt ?? DateTimeOffset.UtcNow
+                };
+
+                var scoreProcessor = rulesetInstance.CreateScoreProcessor();
+                scoreInfo.Rank = StandardisedScoreMigrationTools.ComputeRank(scoreInfo, scoreProcessor);
+            }
+
+            if (apiScore != null)
+                new ProcessorScoreDecoder(working).Parse(scoreInfo);
+
+            var difficultyCalculator = rulesetInstance.CreateDifficultyCalculator(working);
+            var difficultyAttributes = difficultyCalculator.Calculate(mods);
+            var performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
+            if (performanceCalculator == null)
+                return null;
+
+            var perfAttributes = performanceCalculator.Calculate(scoreInfo, difficultyAttributes);
+
+            return apiScore != null
+                ? new ExtendedScore(apiScore, scoreInfo, difficultyAttributes, perfAttributes)
+                : new ExtendedScore(scoreInfo, difficultyAttributes, perfAttributes, null, null, entry.ScoreId.HasValue ? (ulong)entry.ScoreId.Value : null);
+        }
+
         private void onCollectionAdd(string name)
         {
             string fileName = RandomNumberGenerator.GetString(choices: "abcdefghijklmnopqrstuvwxyz0123456789", length: 16) + ".json";
@@ -641,7 +705,7 @@ namespace PerformanceCalculatorGUI.Screens
             {
                 Name = name,
                 FileName = fileName,
-                Scores = []
+                Entries = []
             };
 
             string path = Path.Combine(collections_directory, fileName);
@@ -670,6 +734,7 @@ namespace PerformanceCalculatorGUI.Screens
 
                 if (deserializedCollection != null)
                 {
+                    deserializedCollection.EnsureEntries();
                     collections.Add(deserializedCollection);
                 }
             }
@@ -708,9 +773,15 @@ namespace PerformanceCalculatorGUI.Screens
 
             if (sortCriteria == CollectionSortCriteria.None)
             {
+                currentCollection.Value!.EnsureEntries();
+                var orderMap = currentCollection.Value.Entries!
+                                            .Select((entry, index) => new { entry.EntryId, index })
+                                            .ToDictionary(x => x.EntryId, x => x.index);
+
                 for (int i = 0; i < scoresList.Count; i++)
                 {
-                    scoresList.SetLayoutPosition(scoresList[i], Array.IndexOf(currentCollection.Value!.Scores, scoresList[i].Score.SoloScore.ID));
+                    if (orderMap.TryGetValue(scoresList[i].Entry.EntryId, out int index))
+                        scoresList.SetLayoutPosition(scoresList[i], index);
                 }
 
                 return;
@@ -721,15 +792,19 @@ namespace PerformanceCalculatorGUI.Screens
             switch (sortCriteria)
             {
                 case CollectionSortCriteria.Live:
-                    sortedScores = scoresList.Children.OrderByDescending(x => x.Score.LivePP).ToArray();
+                    sortedScores = scoresList.Children.OrderByDescending(x => x.Score.LivePP ?? double.NegativeInfinity).ToArray();
                     break;
 
                 case CollectionSortCriteria.Local:
-                    sortedScores = scoresList.Children.OrderByDescending(x => x.Score.PerformanceAttributes?.Total).ToArray();
+                    sortedScores = scoresList.Children.OrderByDescending(x => x.Score.PerformanceAttributes?.Total ?? double.NegativeInfinity).ToArray();
                     break;
 
                 case CollectionSortCriteria.Difference:
-                    sortedScores = scoresList.Children.OrderByDescending(x => x.Score.PerformanceAttributes?.Total - x.Score.LivePP).ToArray();
+                    sortedScores = scoresList.Children.OrderByDescending(x =>
+                    {
+                        double local = x.Score.PerformanceAttributes?.Total ?? double.NegativeInfinity;
+                        return x.Score.LivePP.HasValue ? local - x.Score.LivePP.Value : double.NegativeInfinity;
+                    }).ToArray();
                     break;
 
                 default:

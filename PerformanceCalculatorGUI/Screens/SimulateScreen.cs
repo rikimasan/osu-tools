@@ -3,9 +3,12 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using osu.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Audio;
@@ -37,6 +40,7 @@ using osuTK;
 using PerformanceCalculatorGUI.Components;
 using PerformanceCalculatorGUI.Components.TextBoxes;
 using PerformanceCalculatorGUI.Configuration;
+using PerformanceCalculatorGUI.Screens.Collections;
 using PerformanceCalculatorGUI.Screens.ObjectInspection;
 using PerformanceCalculatorGUI.Screens.Simulate;
 
@@ -82,6 +86,8 @@ namespace PerformanceCalculatorGUI.Screens
         private Container beatmapTitle = null!;
 
         private ModDisplay modDisplay = null!;
+
+        private CollectionPickerButton addToCollectionButton = null!;
 
         private StrainVisualizer strainVisualizer = null!;
 
@@ -132,6 +138,7 @@ namespace PerformanceCalculatorGUI.Screens
         private const int file_selection_container_height = 40;
         private const int map_title_container_height = 40;
         private const float mod_selection_container_scale = 0.7f;
+        private const string collections_directory = "collections";
 
         public SimulateScreen()
         {
@@ -420,6 +427,16 @@ namespace PerformanceCalculatorGUI.Screens
                                                     Scale = new Vector2(mod_selection_container_scale),
                                                     IsValidMod = mod => mod.HasImplementation && ModUtils.FlattenMod(mod).All(m => m.UserPlayable),
                                                     SelectedMods = { BindTarget = appliedMods }
+                                                },
+                                                addToCollectionButton = new CollectionPickerButton
+                                                {
+                                                    RelativeSizeAxes = Axes.X,
+                                                    Height = 40,
+                                                    Text = "Add to collection",
+                                                    BackgroundColour = colourProvider.Background1,
+                                                    LoadCollections = loadCollections,
+                                                    CreateCollection = createCollection,
+                                                    OnCollectionSelected = tryAddToCollection
                                                 }
                                             }
                                         }
@@ -736,10 +753,10 @@ namespace PerformanceCalculatorGUI.Screens
             debouncedPerformanceUpdate = Scheduler.AddDelayed(calculatePerformance, 20);
         }
 
-        private void calculatePerformance()
+        private ScoreInfo? createScoreInfoFromInputs()
         {
-            if (working == null || difficultyAttributes == null)
-                return;
+            if (working == null)
+                return null;
 
             int? countGood = null, countMeh = null;
 
@@ -751,41 +768,53 @@ namespace PerformanceCalculatorGUI.Screens
 
             int score = RulesetHelper.AdjustManiaScore(scoreTextBox.Value.Value, appliedMods.Value);
 
-            try
+            var beatmap = working.GetPlayableBeatmap(ruleset.Value, appliedMods.Value);
+
+            double accuracy = accuracyTextBox.Value.Value / 100.0;
+            Dictionary<HitResult, int> statistics = new Dictionary<HitResult, int>();
+
+            if (ruleset.Value.OnlineID != -1)
             {
-                var beatmap = working.GetPlayableBeatmap(ruleset.Value, appliedMods.Value);
-
-                double accuracy = accuracyTextBox.Value.Value / 100.0;
-                Dictionary<HitResult, int> statistics = new Dictionary<HitResult, int>();
-
-                if (ruleset.Value.OnlineID != -1)
+                // official rulesets can generate more precise hits from accuracy
+                if (appliedMods.Value.OfType<OsuModClassic>().Any(m => m.NoSliderHeadAccuracy.Value))
                 {
-                    // official rulesets can generate more precise hits from accuracy
-                    if (appliedMods.Value.OfType<OsuModClassic>().Any(m => m.NoSliderHeadAccuracy.Value))
-                    {
-                        statistics = RulesetHelper.GenerateHitResultsForRuleset(ruleset.Value, accuracyTextBox.Value.Value / 100.0, beatmap, appliedMods.Value.ToArray(), missesTextBox.Value.Value, countMeh, countGood,
-                            null, null);
-                    }
-                    else
-                    {
-                        statistics = RulesetHelper.GenerateHitResultsForRuleset(ruleset.Value, accuracyTextBox.Value.Value / 100.0, beatmap, appliedMods.Value.ToArray(), missesTextBox.Value.Value, countMeh, countGood,
-                            largeTickMissesTextBox.Value.Value, sliderTailMissesTextBox.Value.Value);
-                    }
-
-                    accuracy = RulesetHelper.GetAccuracyForRuleset(ruleset.Value, beatmap, statistics, appliedMods.Value.ToArray());
+                    statistics = RulesetHelper.GenerateHitResultsForRuleset(ruleset.Value, accuracyTextBox.Value.Value / 100.0, beatmap, appliedMods.Value.ToArray(), missesTextBox.Value.Value, countMeh, countGood,
+                        null, null);
+                }
+                else
+                {
+                    statistics = RulesetHelper.GenerateHitResultsForRuleset(ruleset.Value, accuracyTextBox.Value.Value / 100.0, beatmap, appliedMods.Value.ToArray(), missesTextBox.Value.Value, countMeh, countGood,
+                        largeTickMissesTextBox.Value.Value, sliderTailMissesTextBox.Value.Value);
                 }
 
-                var ppAttributes = performanceCalculator?.Calculate(new ScoreInfo(beatmap.BeatmapInfo, ruleset.Value)
-                {
-                    Accuracy = accuracy,
-                    MaxCombo = comboTextBox.Value.Value,
-                    Statistics = statistics,
-                    Mods = appliedMods.Value.ToArray(),
-                    TotalScore = score,
-                    Ruleset = ruleset.Value,
-                    LegacyTotalScore = legacyTotalScore,
-                }, difficultyAttributes);
+                accuracy = RulesetHelper.GetAccuracyForRuleset(ruleset.Value, beatmap, statistics, appliedMods.Value.ToArray());
+            }
 
+            return new ScoreInfo(beatmap.BeatmapInfo, ruleset.Value)
+            {
+                Accuracy = accuracy,
+                MaxCombo = comboTextBox.Value.Value,
+                Statistics = statistics,
+                Mods = appliedMods.Value.ToArray(),
+                TotalScore = score,
+                Ruleset = ruleset.Value,
+                LegacyTotalScore = legacyTotalScore,
+                Date = DateTimeOffset.UtcNow,
+            };
+        }
+
+        private void calculatePerformance()
+        {
+            if (working == null || difficultyAttributes == null)
+                return;
+
+            try
+            {
+                var scoreInfo = createScoreInfoFromInputs();
+                if (scoreInfo == null)
+                    return;
+
+                var ppAttributes = performanceCalculator?.Calculate(scoreInfo, difficultyAttributes);
                 performanceAttributesContainer.Attributes.Value = AttributeConversion.ToDictionary(ppAttributes);
             }
             catch (Exception e)
@@ -793,6 +822,92 @@ namespace PerformanceCalculatorGUI.Screens
                 showError(e);
                 resetBeatmap();
             }
+        }
+
+        private List<Collection> loadCollections()
+        {
+            if (!Directory.Exists(collections_directory))
+                return new List<Collection>();
+
+            var collections = new List<Collection>();
+
+            foreach (string collectionFile in Directory.EnumerateFiles(collections_directory))
+            {
+                var deserializedCollection = JsonConvert.DeserializeObject<Collection>(File.ReadAllText(collectionFile));
+                if (deserializedCollection == null)
+                    continue;
+
+                deserializedCollection.EnsureEntries();
+                collections.Add(deserializedCollection);
+            }
+
+            return collections;
+        }
+
+        private Collection? createCollection(string name)
+        {
+            string fileName = RandomNumberGenerator.GetString(choices: "abcdefghijklmnopqrstuvwxyz0123456789", length: 16) + ".json";
+
+            var collection = new Collection
+            {
+                Name = name,
+                FileName = fileName,
+                Entries = new List<CollectionScoreEntry>()
+            };
+
+            writeCollection(collection);
+
+            return collection;
+        }
+
+        private bool tryAddToCollection(Collection collection)
+        {
+            var entry = tryCreateCollectionEntry();
+            if (entry == null)
+                return false;
+
+            collection.EnsureEntries();
+            collection.Entries!.Add(entry);
+            writeCollection(collection);
+
+            notificationDisplay.Display(new Notification($"Added to {collection.Name}"));
+            return true;
+        }
+
+        private CollectionScoreEntry? tryCreateCollectionEntry()
+        {
+            if (working == null)
+                return null;
+
+            var scoreInfo = createScoreInfoFromInputs();
+            if (scoreInfo == null)
+                return null;
+
+            var entry = new CollectionScoreEntry();
+
+            long? scoreId = null;
+            if (!string.IsNullOrEmpty(scoreIdTextBox.Current.Value) && long.TryParse(scoreIdTextBox.Current.Value, out long parsedScoreId))
+                scoreId = parsedScoreId;
+
+            entry.ScoreId = scoreId;
+            entry.BeatmapId = working.BeatmapInfo?.OnlineID ?? 0;
+            entry.RulesetId = ruleset.Value.OnlineID;
+            entry.Accuracy = scoreInfo.Accuracy;
+            entry.MaxCombo = scoreInfo.MaxCombo;
+            entry.TotalScore = scoreInfo.TotalScore;
+            entry.LegacyTotalScore = scoreInfo.LegacyTotalScore;
+            entry.Statistics = new Dictionary<HitResult, int>(scoreInfo.Statistics);
+            entry.Mods = CollectionModSerializer.Serialize(scoreInfo.Mods);
+            entry.EndedAt = scoreInfo.Date;
+
+            return entry;
+        }
+
+        private void writeCollection(Collection collection)
+        {
+            Directory.CreateDirectory(collections_directory);
+            string path = Path.Combine(collections_directory, collection.FileName);
+            File.WriteAllText(path, JsonConvert.SerializeObject(collection));
         }
 
         private void populateScoreParams()

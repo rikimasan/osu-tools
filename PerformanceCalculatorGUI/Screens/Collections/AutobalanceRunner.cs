@@ -209,7 +209,11 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         {
             var dataset = new List<AutobalanceScoreData>();
 
-            int total = collection.Scores.Length;
+            collection.EnsureEntries();
+            collection.ExpectedPerformance ??= new Dictionary<long, ExpectedPerformanceValues>();
+
+            var entries = collection.Entries ?? new List<CollectionScoreEntry>();
+            int total = entries.Count;
 
             reporter.Report(0, stage: "Loading scores", completed: 0, total: total);
 
@@ -221,7 +225,15 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 
             for (int i = 0; i < total; i++)
             {
-                long scoreId = collection.Scores[i];
+                var entry = entries[i];
+
+                if (!entry.ScoreId.HasValue)
+                {
+                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
+                    continue;
+                }
+
+                long scoreId = entry.ScoreId.Value;
 
                 if (!collection.ExpectedPerformance.TryGetValue(scoreId, out var expectedValues))
                 {

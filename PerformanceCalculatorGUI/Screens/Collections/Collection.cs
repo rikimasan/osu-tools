@@ -2,6 +2,7 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System.Collections.Generic;
+using System.Linq;
 
 namespace PerformanceCalculatorGUI.Screens.Collections
 {
@@ -9,8 +10,20 @@ namespace PerformanceCalculatorGUI.Screens.Collections
     {
         public required string FileName { get; set; }
         public required string Name { get; set; }
-        public required long[] Scores { get; set; }
+        public List<CollectionScoreEntry>? Entries { get; set; }
+        public long[]? Scores { get; set; }
         public Dictionary<long, ExpectedPerformanceValues> ExpectedPerformance { get; set; } = new Dictionary<long, ExpectedPerformanceValues>();
+
+        public void EnsureEntries()
+        {
+            if (Entries == null)
+            {
+                Entries = Scores?.Select(id => new CollectionScoreEntry { ScoreId = id }).ToList()
+                          ?? new List<CollectionScoreEntry>();
+            }
+
+            Scores = null;
+        }
     }
 
     public class ExpectedPerformanceValues
