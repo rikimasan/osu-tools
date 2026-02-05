@@ -13,49 +13,24 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Cursor;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Graphics.UserInterface;
-using osu.Framework.Input.Events;
+using osuTK;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Toolbar;
-using osu.Game.Rulesets;
-using osu.Game.Rulesets.Osu.Difficulty;
-using osuTK;
+using osu.Game.Rulesets.Catch.Difficulty;
 using PerformanceCalculatorGUI.Components.TextBoxes;
 using PerformanceCalculatorGUI.Configuration;
 
 namespace PerformanceCalculatorGUI.Components
 {
-    public partial class OsuDifficultyTuningButton : ToolbarButton, IHasPopover
-    {
-        protected override Anchor TooltipAnchor => Anchor.TopRight;
-
-        [Resolved]
-        private Bindable<RulesetInfo> ruleset { get; set; } = null!;
-
-        public OsuDifficultyTuningButton()
-        {
-            TooltipMain = "Tuning";
-            SetIcon(new ScreenSelectionButtonIcon());
-        }
-
-        public Popover GetPopover()
-            => ruleset.Value.ShortName == "fruits" ? new CatchDifficultyTuningPopover() : new OsuDifficultyTuningPopover();
-
-        protected override bool OnClick(ClickEvent e)
-        {
-            this.ShowPopover();
-            return base.OnClick(e);
-        }
-    }
-
-    public partial class OsuDifficultyTuningPopover : OsuPopover
+    public partial class CatchDifficultyTuningPopover : OsuPopover
     {
         private const double tuning_min_value = 0.0;
         private const double tuning_max_value = double.MaxValue;
-        private const string default_tuning_file_name = "osu-tuning.json";
+        private const string default_tuning_file_name = "catch-tuning.json";
 
         [Resolved]
         private OverlayColourProvider colourProvider { get; set; } = null!;
@@ -67,13 +42,13 @@ namespace PerformanceCalculatorGUI.Components
         private NotificationDisplay notificationDisplay { get; set; } = null!;
 
         [Resolved]
-        private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
+        private CatchDifficultyTuningManager tuningManager { get; set; } = null!;
 
         private readonly List<TuningControl> tuningControls = new List<TuningControl>();
         private Bindable<string> defaultPathBindable = null!;
         private FileChooserLabelledTextBox tuningFileTextBox = null!;
 
-        public OsuDifficultyTuningPopover()
+        public CatchDifficultyTuningPopover()
             : base(false)
         {
         }
@@ -96,99 +71,85 @@ namespace PerformanceCalculatorGUI.Components
                 new OsuSpriteText
                 {
                     Font = new FontUsage(size: 12),
-                    Text = "Applies to osu! ruleset only."
-                }
-            };
-
-            foreach (var section in OsuDifficultyTuningParameters.Sections)
-            {
-                content.Add(new OsuSpriteText
+                    Text = "Applies to osu!catch ruleset only."
+                },
+                createParameterGrid(CatchDifficultyTuningParameters.All, initialTuning),
+                new OsuSpriteText
                 {
                     Margin = new MarginPadding { Top = 6f },
                     Font = OsuFont.Torus.With(size: 14, weight: FontWeight.SemiBold),
-                    Text = section.Title
-                });
-
-                content.Add(createSectionGrid(section, initialTuning));
-            }
-
-            content.Add(new OsuSpriteText
-            {
-                Margin = new MarginPadding { Top = 6f },
-                Font = OsuFont.Torus.With(size: 14, weight: FontWeight.SemiBold),
-                Text = "Tuning presets"
-            });
-
-            content.Add(new FillFlowContainer
-            {
-                RelativeSizeAxes = Axes.X,
-                AutoSizeAxes = Axes.Y,
-                Direction = FillDirection.Vertical,
-                Spacing = new Vector2(0, 6f),
-                Children = new Drawable[]
+                    Text = "Tuning presets"
+                },
+                new FillFlowContainer
                 {
-                    tuningFileTextBox = new FileChooserLabelledTextBox(defaultPathBindable, ".json")
+                    RelativeSizeAxes = Axes.X,
+                    AutoSizeAxes = Axes.Y,
+                    Direction = FillDirection.Vertical,
+                    Spacing = new Vector2(0, 6f),
+                    Children = new Drawable[]
                     {
-                        RelativeSizeAxes = Axes.X,
-                        Label = "Preset file",
-                        FixedLabelWidth = 100f,
-                        PlaceholderText = defaultPresetPath,
-                        Current = { Value = defaultPresetPath }
-                    },
-                    new FillFlowContainer
-                    {
-                        AutoSizeAxes = Axes.Both,
-                        Direction = FillDirection.Horizontal,
-                        Spacing = new Vector2(8, 0),
-                        Children = new Drawable[]
+                        tuningFileTextBox = new FileChooserLabelledTextBox(defaultPathBindable, ".json")
                         {
-                            new RoundedButton
+                            RelativeSizeAxes = Axes.X,
+                            Label = "Preset file",
+                            FixedLabelWidth = 100f,
+                            PlaceholderText = defaultPresetPath,
+                            Current = { Value = defaultPresetPath }
+                        },
+                        new FillFlowContainer
+                        {
+                            AutoSizeAxes = Axes.Both,
+                            Direction = FillDirection.Horizontal,
+                            Spacing = new Vector2(8, 0),
+                            Children = new Drawable[]
                             {
-                                Width = 120,
-                                Height = 32,
-                                BackgroundColour = colourProvider.Background3,
-                                Text = "Load",
-                                Action = loadFromJson
-                            },
-                            new RoundedButton
-                            {
-                                Width = 120,
-                                Height = 32,
-                                BackgroundColour = colourProvider.Background3,
-                                Text = "Save",
-                                Action = saveToJson
+                                new RoundedButton
+                                {
+                                    Width = 120,
+                                    Height = 32,
+                                    BackgroundColour = colourProvider.Background3,
+                                    Text = "Load",
+                                    Action = loadFromJson
+                                },
+                                new RoundedButton
+                                {
+                                    Width = 120,
+                                    Height = 32,
+                                    BackgroundColour = colourProvider.Background3,
+                                    Text = "Save",
+                                    Action = saveToJson
+                                }
                             }
                         }
                     }
-                }
-            });
-
-            content.Add(new FillFlowContainer
-            {
-                Margin = new MarginPadding { Top = 10f },
-                AutoSizeAxes = Axes.Both,
-                Direction = FillDirection.Horizontal,
-                Spacing = new Vector2(8, 0),
-                Children = new Drawable[]
+                },
+                new FillFlowContainer
                 {
-                    new RoundedButton
+                    Margin = new MarginPadding { Top = 10f },
+                    AutoSizeAxes = Axes.Both,
+                    Direction = FillDirection.Horizontal,
+                    Spacing = new Vector2(8, 0),
+                    Children = new Drawable[]
                     {
-                        Width = 120,
-                        Height = 32,
-                        BackgroundColour = colourProvider.Background3,
-                        Text = "Reset",
-                        Action = resetToDefaults
-                    },
-                    new RoundedButton
-                    {
-                        Width = 200,
-                        Height = 32,
-                        BackgroundColour = colourProvider.Background1,
-                        Text = "Apply & recalculate",
-                        Action = apply
+                        new RoundedButton
+                        {
+                            Width = 120,
+                            Height = 32,
+                            BackgroundColour = colourProvider.Background3,
+                            Text = "Reset",
+                            Action = resetToDefaults
+                        },
+                        new RoundedButton
+                        {
+                            Width = 200,
+                            Height = 32,
+                            BackgroundColour = colourProvider.Background1,
+                            Text = "Apply & recalculate",
+                            Action = apply
+                        }
                     }
                 }
-            });
+            };
 
             Child = new Container
             {
@@ -209,9 +170,9 @@ namespace PerformanceCalculatorGUI.Components
             };
         }
 
-        private GridContainer createSectionGrid(OsuDifficultyTuningSection section, OsuDifficultyConstants initialTuning)
+        private GridContainer createParameterGrid(IReadOnlyList<CatchDifficultyTuningParameter> parameters, CatchDifficultyConstants initialTuning)
         {
-            int rows = (section.Parameters.Count + 1) / 2;
+            int rows = (parameters.Count + 1) / 2;
             var rowDimensions = new Dimension[rows];
 
             for (int i = 0; i < rows; i++)
@@ -227,8 +188,8 @@ namespace PerformanceCalculatorGUI.Components
                 {
                     int index = row * 2 + column;
 
-                    rowContent[column] = index < section.Parameters.Count
-                        ? createControl(section.Parameters[index], initialTuning)
+                    rowContent[column] = index < parameters.Count
+                        ? createControl(parameters[index], initialTuning)
                         : new Container();
                 }
 
@@ -245,7 +206,7 @@ namespace PerformanceCalculatorGUI.Components
             };
         }
 
-        private Drawable createControl(OsuDifficultyTuningParameter parameter, OsuDifficultyConstants initialTuning)
+        private Drawable createControl(CatchDifficultyTuningParameter parameter, CatchDifficultyConstants initialTuning)
         {
             TuningControl control;
 
@@ -275,7 +236,7 @@ namespace PerformanceCalculatorGUI.Components
 
         private void resetToDefaults()
         {
-            applyTuning(OsuDifficultyConstants.Default);
+            applyTuning(CatchDifficultyConstants.Default);
         }
 
         private LimitedLabelledFractionalNumberBox createTuningBox(string label, double defaultValue)
@@ -319,7 +280,7 @@ namespace PerformanceCalculatorGUI.Components
             box.Value.Value = value;
         }
 
-        private OsuDifficultyConstants buildTuningFromControls()
+        private CatchDifficultyConstants buildTuningFromControls()
         {
             var tuning = tuningManager.Current.Value;
 
@@ -331,7 +292,7 @@ namespace PerformanceCalculatorGUI.Components
             return tuning;
         }
 
-        private void applyTuning(OsuDifficultyConstants tuning)
+        private void applyTuning(CatchDifficultyConstants tuning)
         {
             foreach (var control in tuningControls)
             {
@@ -407,7 +368,7 @@ namespace PerformanceCalculatorGUI.Components
 
             try
             {
-                var tuning = JsonConvert.DeserializeObject<OsuDifficultyConstants>(File.ReadAllText(path));
+                var tuning = JsonConvert.DeserializeObject<CatchDifficultyConstants>(File.ReadAllText(path));
 
                 if (tuning == null)
                 {
@@ -426,7 +387,7 @@ namespace PerformanceCalculatorGUI.Components
 
         private sealed class TuningControl
         {
-            public OsuDifficultyTuningParameter Parameter { get; }
+            public CatchDifficultyTuningParameter Parameter { get; }
 
             private readonly LimitedLabelledFractionalNumberBox? fractionalBox;
             private readonly LimitedLabelledNumberBox? intBox;
@@ -435,13 +396,13 @@ namespace PerformanceCalculatorGUI.Components
 
             public double Value => fractionalBox != null ? fractionalBox.Value.Value : intBox!.Value.Value;
 
-            public TuningControl(OsuDifficultyTuningParameter parameter, LimitedLabelledFractionalNumberBox box)
+            public TuningControl(CatchDifficultyTuningParameter parameter, LimitedLabelledFractionalNumberBox box)
             {
                 Parameter = parameter;
                 fractionalBox = box;
             }
 
-            public TuningControl(OsuDifficultyTuningParameter parameter, LimitedLabelledNumberBox box)
+            public TuningControl(CatchDifficultyTuningParameter parameter, LimitedLabelledNumberBox box)
             {
                 Parameter = parameter;
                 intBox = box;
