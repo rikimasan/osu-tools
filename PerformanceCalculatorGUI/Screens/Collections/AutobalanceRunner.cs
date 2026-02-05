@@ -78,7 +78,8 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 parameter.AutobalanceMinValue,
                 parameter.DefaultEnabled,
                 parameter.Getter,
-                parameter.Setter)).ToArray();
+                parameter.Setter,
+                parameter.AutobalanceMaxValue)).ToArray();
 
         private sealed class ProgressReporter
         {
@@ -222,14 +223,25 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             for (int i = 0; i < n; i++)
             {
                 double min = parameters[i].MinValue;
+                double? max = parameters[i].MaxValue;
 
                 double baseVal = parameters[i].Getter(baseTuning);
                 if (double.IsNaN(baseVal) || double.IsInfinity(baseVal))
                     baseVal = 1.0;
 
+                double lo;
+                double hi;
 
-                double lo = Math.Max(min, baseVal * bound_lower_factor);
-                double hi = Math.Max(baseVal * bound_upper_factor, min * bound_upper_factor);
+                if (max.HasValue)
+                {
+                    lo = min;
+                    hi = max.Value;
+                }
+                else
+                {
+                    lo = Math.Max(min, baseVal * bound_lower_factor);
+                    hi = Math.Max(baseVal * bound_upper_factor, min * bound_upper_factor);
+                }
 
                 if (double.IsNaN(lo) || double.IsInfinity(lo))
                     lo = min;
@@ -544,41 +556,50 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         public bool DefaultEnabled { get; }
     }
 
-    public sealed class AutobalanceParameter<TTuning> : IAutobalanceParameter
-    {
-        public string Label { get; }
-        public Func<TTuning, double> Getter { get; }
-        public Func<TTuning, double, TTuning> Setter { get; }
-        public double MinValue { get; }
-        public bool IsInteger { get; }
-        public bool DefaultEnabled { get; }
-
-        public AutobalanceParameter(string label, bool isInteger, double minValue, bool defaultEnabled,
-                                    Func<TTuning, double> getter, Func<TTuning, double, TTuning> setter)
+        public sealed class AutobalanceParameter<TTuning> : IAutobalanceParameter
         {
-            Label = label;
-            IsInteger = isInteger;
-            MinValue = minValue;
-            DefaultEnabled = defaultEnabled;
-            Getter = getter;
-            Setter = setter;
-        }
+            public string Label { get; }
+            public Func<TTuning, double> Getter { get; }
+            public Func<TTuning, double, TTuning> Setter { get; }
+            public double MinValue { get; }
+            public double? MaxValue { get; }
+            public bool IsInteger { get; }
+            public bool DefaultEnabled { get; }
 
-        public TTuning Apply(TTuning tuning, double value)
-        {
-            if (double.IsNaN(value) || double.IsInfinity(value))
-                return tuning;
-
-            if (IsInteger)
+            public AutobalanceParameter(string label, bool isInteger, double minValue, bool defaultEnabled,
+                                        Func<TTuning, double> getter, Func<TTuning, double, TTuning> setter, double? maxValue = null)
             {
-                int intValue = Math.Max((int)Math.Round(value), (int)MinValue);
-                return Setter(tuning, intValue);
+                Label = label;
+                IsInteger = isInteger;
+                MinValue = minValue;
+                MaxValue = maxValue;
+                DefaultEnabled = defaultEnabled;
+                Getter = getter;
+                Setter = setter;
             }
 
-            double clamped = Math.Max(value, MinValue);
-            return Setter(tuning, clamped);
+            public TTuning Apply(TTuning tuning, double value)
+            {
+                if (double.IsNaN(value) || double.IsInfinity(value))
+                    return tuning;
+
+                if (IsInteger)
+                {
+                    int intValue = (int)Math.Round(value);
+                    int minValue = (int)MinValue;
+                    int maxValue = MaxValue.HasValue ? (int)Math.Round(MaxValue.Value) : int.MaxValue;
+                    if (maxValue < minValue)
+                        maxValue = minValue;
+                    intValue = Math.Clamp(intValue, minValue, maxValue);
+                    return Setter(tuning, intValue);
+                }
+
+                double clamped = Math.Max(value, MinValue);
+                if (MaxValue.HasValue)
+                    clamped = Math.Min(clamped, MaxValue.Value);
+                return Setter(tuning, clamped);
+            }
         }
-    }
 
     public sealed class AutobalanceScoreData
     {
