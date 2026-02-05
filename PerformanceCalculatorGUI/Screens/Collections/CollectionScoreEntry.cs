@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using osu.Game.Rulesets.Scoring;
 
 namespace PerformanceCalculatorGUI.Screens.Collections
@@ -20,6 +21,11 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         public Dictionary<HitResult, int> Statistics { get; set; } = new Dictionary<HitResult, int>();
         public List<CollectionModInfo> Mods { get; set; } = new List<CollectionModInfo>();
         public DateTimeOffset? EndedAt { get; set; }
+
+        public string GetExpectedPerformanceKey()
+        {
+            return ScoreId?.ToString(CultureInfo.InvariantCulture) ?? EntryId;
+        }
     }
 
     public class CollectionModInfo

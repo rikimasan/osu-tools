@@ -379,8 +379,7 @@ namespace PerformanceCalculatorGUI.Screens
             string entryId = entry.EntryId;
             collection.Entries!.RemoveAll(x => x.EntryId == entryId);
 
-            if (entry.ScoreId.HasValue)
-                collection.ExpectedPerformance.Remove(entry.ScoreId.Value);
+            collection.ExpectedPerformance.Remove(entry.GetExpectedPerformanceKey());
 
             saveCurrentCollection();
         }
@@ -394,7 +393,7 @@ namespace PerformanceCalculatorGUI.Screens
             }
 
             obj.NewValue.EnsureEntries();
-            obj.NewValue.ExpectedPerformance ??= new Dictionary<long, ExpectedPerformanceValues>();
+            obj.NewValue.ExpectedPerformance ??= new Dictionary<string, ExpectedPerformanceValues>();
             collectionNameText.Text = obj.NewValue!.Name;
             collectionContainer.Show();
             resetAutobalanceUi();
@@ -457,7 +456,7 @@ namespace PerformanceCalculatorGUI.Screens
                 return;
 
             currentCollection.Value.EnsureEntries();
-            currentCollection.Value.ExpectedPerformance ??= new Dictionary<long, ExpectedPerformanceValues>();
+            currentCollection.Value.ExpectedPerformance ??= new Dictionary<string, ExpectedPerformanceValues>();
             var entries = currentCollection.Value.Entries!.ToList();
 
             scoresList.Clear();

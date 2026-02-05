@@ -12,7 +12,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         public required string Name { get; set; }
         public List<CollectionScoreEntry>? Entries { get; set; }
         public long[]? Scores { get; set; }
-        public Dictionary<long, ExpectedPerformanceValues> ExpectedPerformance { get; set; } = new Dictionary<long, ExpectedPerformanceValues>();
+        public Dictionary<string, ExpectedPerformanceValues> ExpectedPerformance { get; set; } = new Dictionary<string, ExpectedPerformanceValues>();
 
         public void EnsureEntries()
         {

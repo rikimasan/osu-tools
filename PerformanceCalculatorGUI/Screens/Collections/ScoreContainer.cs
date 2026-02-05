@@ -31,9 +31,9 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 
         private readonly IconButton deleteButton;
 
-        private readonly IDictionary<long, ExpectedPerformanceValues> expectedValuesByScore;
+        private readonly IDictionary<string, ExpectedPerformanceValues> expectedValuesByKey;
         private readonly Action onExpectedValuesChanged;
-        private readonly long? scoreId;
+        private readonly string expectedValuesKey;
 
         private ExpectedPerformanceValues? expectedValues;
 
@@ -54,19 +54,17 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 
         public event OnDeleteHandler? OnDelete;
 
-        public ScoreContainer(CollectionScoreEntry entry, ExtendedScore score, IDictionary<long, ExpectedPerformanceValues> expectedValuesByScore, Action onExpectedValuesChanged)
+        public ScoreContainer(CollectionScoreEntry entry, ExtendedScore score, IDictionary<string, ExpectedPerformanceValues> expectedValuesByKey, Action onExpectedValuesChanged)
         {
             RelativeSizeAxes = Axes.X;
             AutoSizeAxes = Axes.Y;
 
             Entry = entry;
             Score = score;
-            this.expectedValuesByScore = expectedValuesByScore;
+            this.expectedValuesByKey = expectedValuesByKey;
             this.onExpectedValuesChanged = onExpectedValuesChanged;
-            scoreId = entry.ScoreId;
-
-            if (scoreId.HasValue)
-                expectedValuesByScore.TryGetValue(scoreId.Value, out expectedValues);
+            expectedValuesKey = entry.GetExpectedPerformanceKey();
+            expectedValuesByKey.TryGetValue(expectedValuesKey, out expectedValues);
 
             Child = new FillFlowContainer
             {
@@ -140,12 +138,6 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         private void populateExpectedValues()
         {
             expectedValuesContainer.Clear();
-
-            if (!scoreId.HasValue)
-            {
-                expectedValuesContainer.Hide();
-                return;
-            }
 
             var attributes = AttributeConversion.ToDictionary(Score.PerformanceAttributes);
             var numericAttributes = new Dictionary<string, double>();
@@ -393,22 +385,19 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             if (expectedValues != null)
                 return expectedValues;
 
-            if (!scoreId.HasValue)
-                throw new InvalidOperationException("Expected values require a score id.");
-
             expectedValues = new ExpectedPerformanceValues();
-            expectedValuesByScore[scoreId.Value] = expectedValues;
+            expectedValuesByKey[expectedValuesKey] = expectedValues;
             return expectedValues;
         }
 
         private void pruneExpectedValuesIfEmpty()
         {
-            if (expectedValues == null || !scoreId.HasValue)
+            if (expectedValues == null)
                 return;
 
             if (expectedValues.Total == null && expectedValues.Skills.Count == 0)
             {
-                expectedValuesByScore.Remove(scoreId.Value);
+                expectedValuesByKey.Remove(expectedValuesKey);
                 expectedValues = null;
             }
         }

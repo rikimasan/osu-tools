@@ -15,6 +15,7 @@ using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Osu;
 using osu.Game.Rulesets.Osu.Difficulty;
+using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using PerformanceCalculatorGUI.Configuration;
 
@@ -210,7 +211,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             var dataset = new List<AutobalanceScoreData>();
 
             collection.EnsureEntries();
-            collection.ExpectedPerformance ??= new Dictionary<long, ExpectedPerformanceValues>();
+            collection.ExpectedPerformance ??= new Dictionary<string, ExpectedPerformanceValues>();
 
             var entries = collection.Entries ?? new List<CollectionScoreEntry>();
             int total = entries.Count;
@@ -227,15 +228,9 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             {
                 var entry = entries[i];
 
-                if (!entry.ScoreId.HasValue)
-                {
-                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
-                    continue;
-                }
+                string expectedKey = entry.GetExpectedPerformanceKey();
 
-                long scoreId = entry.ScoreId.Value;
-
-                if (!collection.ExpectedPerformance.TryGetValue(scoreId, out var expectedValues))
+                if (!collection.ExpectedPerformance.TryGetValue(expectedKey, out var expectedValues))
                 {
                     reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
                     continue;
@@ -249,44 +244,88 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 
                 SoloScoreInfo? score = null;
 
-                try
+                if (entry.ScoreId is long scoreId)
                 {
-                    score = await scoreCache.GetScore(scoreId).ConfigureAwait(false);
-                }
-                catch (Exception e)
-                {
-                    Logger.Log(e.ToString(), level: LogLevel.Error);
+                    try
+                    {
+                        score = await scoreCache.GetScore(scoreId).ConfigureAwait(false);
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.Log(e.ToString(), level: LogLevel.Error);
+                    }
+
+                    if (score == null)
+                    {
+                        reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
+                        continue;
+                    }
                 }
 
-                if (score == null)
-                {
-                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
-                    continue;
-                }
-
-                var rulesetInfo = rulesets.GetRuleset(score.RulesetID);
-                if (rulesetInfo?.ShortName != "osu")
-                {
-                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
-                    continue;
-                }
-
+                RulesetInfo? rulesetInfo;
                 ProcessorWorkingBeatmap working;
+                Mod[] mods;
+                ScoreInfo scoreInfo;
 
-                try
+                if (score != null)
                 {
-                    working = ProcessorWorkingBeatmap.FromFileOrId(score.BeatmapID.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
+                    rulesetInfo = rulesets.GetRuleset(score.RulesetID);
+                    if (rulesetInfo?.ShortName != "osu")
+                    {
+                        reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
+                        continue;
+                    }
+
+                    try
+                    {
+                        working = ProcessorWorkingBeatmap.FromFileOrId(score.BeatmapID.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.Log(e.ToString(), level: LogLevel.Error);
+                        reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
+                        continue;
+                    }
+
+                    scoreInfo = score.ToScoreInfo(rulesets, working.BeatmapInfo);
+                    mods = score.Mods.Select(x => x.ToMod(rulesetInfo.CreateInstance())).ToArray();
                 }
-                catch (Exception e)
+                else
                 {
-                    Logger.Log(e.ToString(), level: LogLevel.Error);
-                    reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
-                    continue;
+                    rulesetInfo = rulesets.GetRuleset(entry.RulesetId);
+                    if (rulesetInfo?.ShortName != "osu")
+                    {
+                        reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
+                        continue;
+                    }
+
+                    try
+                    {
+                        working = ProcessorWorkingBeatmap.FromFileOrId(entry.BeatmapId.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.Log(e.ToString(), level: LogLevel.Error);
+                        reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
+                        continue;
+                    }
+
+                    var rulesetInstance = rulesetInfo.CreateInstance();
+                    mods = CollectionModSerializer.Deserialize(entry.Mods, rulesetInstance);
+                    scoreInfo = new ScoreInfo(working.BeatmapInfo, rulesetInfo)
+                    {
+                        Accuracy = entry.Accuracy,
+                        MaxCombo = entry.MaxCombo,
+                        Statistics = entry.Statistics ?? new Dictionary<HitResult, int>(),
+                        Mods = mods,
+                        TotalScore = entry.TotalScore,
+                        LegacyTotalScore = entry.LegacyTotalScore,
+                        Ruleset = rulesetInfo,
+                        Date = entry.EndedAt ?? DateTimeOffset.UtcNow
+                    };
                 }
 
-                var scoreInfo = score.ToScoreInfo(rulesets, working.BeatmapInfo);
                 var parsedScore = new ProcessorScoreDecoder(working).Parse(scoreInfo);
-                var mods = score.Mods.Select(x => x.ToMod(rulesetInfo.CreateInstance())).ToArray();
 
                 dataset.Add(new AutobalanceScoreData(working, mods, parsedScore.ScoreInfo, expectedValue));
 
