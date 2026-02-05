@@ -13,7 +13,7 @@ using osu.Framework.Graphics.Sprites;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Overlays;
-using osu.Game.Rulesets.Catch.Difficulty.Evaluators;
+using CatchSpeedEvaluator = osu.Game.Rulesets.Catch.Difficulty.Evaluators.SpeedEvaluator;
 using osu.Game.Rulesets.Catch.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Mods;
@@ -201,17 +201,36 @@ namespace PerformanceCalculatorGUI.Screens.ObjectInspection
         {
             flowContainer.AddRange(new[]
             {
-                new ObjectInspectorDifficultyValue("Strain Time", hitObject.StrainTime),
-                new ObjectInspectorDifficultyValue("Normalized Position", hitObject.NormalizedPosition),
-                new ObjectInspectorDifficultyValue("Last Normalized Position", hitObject.LastNormalizedPosition),
-                new ObjectInspectorDifficultyValue("Player Position", hitObject.PlayerPosition),
-                new ObjectInspectorDifficultyValue("Last Player Position", hitObject.LastPlayerPosition),
-                new ObjectInspectorDifficultyValue("Distance Moved", hitObject.DistanceMoved),
-                new ObjectInspectorDifficultyValue("Exact Distance Moved", hitObject.ExactDistanceMoved),
-
-                // see https://github.com/ppy/osu/blob/a08f7327b11977f1de57b8a177bf26918ebfacda/osu.Game.Rulesets.Catch/Difficulty/Skills/Movement.cs#L36
-                new ObjectInspectorDifficultyValue("Movement Difficulty", MovementEvaluator.EvaluateDifficultyOf(hitObject, track.Rate)),
+                new ObjectInspectorDifficultyValue("Delta Time", hitObject.DeltaTime),
+                new ObjectInspectorDifficultyValue("Position", hitObject.Position),
+                new ObjectInspectorDifficultyValue("Delta Position", hitObject.DeltaPosition),
+                new ObjectInspectorDifficultyValue("Action Probability", hitObject.MovementData.ActionProbability),
+                new ObjectInspectorDifficultyValue("Precision Strain", hitObject.MovementData.PrecisionStrain),
+                new ObjectInspectorDifficultyValue("Raw Precision Strain", hitObject.MovementData.RawPrecisionStrain),
+                new ObjectInspectorDifficultyValue("Burst Speed", hitObject.MovementData.BurstSpeed),
+                new ObjectInspectorDifficultyValue("Consistency Speed", hitObject.MovementData.ConsistencySpeed),
+                new ObjectInspectorDifficultyValue("Snap Speed", hitObject.MovementData.SnapSpeed),
+                new ObjectInspectorDifficultyValue("Reading Factor", hitObject.ReadingData.CombinedReadingFactor),
+                new ObjectInspectorDifficultyValue("High CS Factor", hitObject.ReadingData.HighCSFactor),
+                new ObjectInspectorDifficultyValue("Note Speed", hitObject.DisplayData.NoteSpeed),
+                new ObjectInspectorDifficultyValue("Partial LSR", hitObject.DisplayData.PartialLocalStarRating),
+                new ObjectInspectorDifficultyValue("Local SR", hitObject.DisplayData.LocalStarRating),
+                new ObjectInspectorDifficultyValue("Direction Change Weight", hitObject.DisplayData.DirectionChangeWeight),
+                new ObjectInspectorDifficultyValue("Precision Correction", hitObject.DisplayData.PrecisionCorrection),
+                new ObjectInspectorDifficultyValue("Movement Difficulty", CatchSpeedEvaluator.EvaluateDifficultyOf(hitObject)),
             });
+
+            if (hitObject.MovementData.NotePrecision != null)
+                flowContainer.Add(new ObjectInspectorDifficultyValue("Note Precision", hitObject.MovementData.NotePrecision.Value));
+
+            if (hitObject.MovementData.OriginalPrecision != null)
+                flowContainer.Add(new ObjectInspectorDifficultyValue("Original Precision", hitObject.MovementData.OriginalPrecision.Value));
+
+            if (hitObject.MovementData.FuturePrecision != null)
+                flowContainer.Add(new ObjectInspectorDifficultyValue("Future Precision", hitObject.MovementData.FuturePrecision.Value));
+
+            if (hitObject.DisplayData.FuturePrecisionDifference != null)
+                flowContainer.Add(new ObjectInspectorDifficultyValue("Future Precision Diff", hitObject.DisplayData.FuturePrecisionDifference.Value));
         }
     }
 }

@@ -632,7 +632,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         private AutobalanceResult(string errorMessage)
         {
             IsFailure = true;
-            Tuning = null;
+            Tuning = default;
             Rmse = 0;
             SampleCount = 0;
             ErrorMessage = errorMessage;
