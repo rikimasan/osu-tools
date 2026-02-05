@@ -30,8 +30,11 @@ using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Dialog;
 using osu.Game.Rulesets;
+using osu.Game.Rulesets.Catch;
+using osu.Game.Rulesets.Catch.Difficulty;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Osu;
+using osu.Game.Rulesets.Osu.Difficulty;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using osuTK;
@@ -67,6 +70,9 @@ namespace PerformanceCalculatorGUI.Screens
         [Resolved]
         private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
 
+        [Resolved]
+        private CatchDifficultyTuningManager catchTuningManager { get; set; } = null!;
+
         private FillFlowContainer collectionList = null!;
         private CreateCollectionButton createCollectionButton = null!;
 
@@ -86,8 +92,9 @@ namespace PerformanceCalculatorGUI.Screens
         private string autobalanceStage = "Ready";
         private readonly Stopwatch autobalanceStopwatch = new Stopwatch();
         private ScheduledDelegate? autobalanceElapsedUpdate;
+        private readonly Bindable<AutobalanceRuleset> autobalanceRuleset = new Bindable<AutobalanceRuleset>(AutobalanceRuleset.Osu);
         private readonly Bindable<AutobalanceTarget> autobalanceTarget = new Bindable<AutobalanceTarget>(AutobalanceTarget.Total);
-        private readonly Dictionary<AutobalanceParameter, BindableBool> autobalanceParameterStates = new Dictionary<AutobalanceParameter, BindableBool>();
+        private readonly Dictionary<IAutobalanceParameter, BindableBool> autobalanceParameterStates = new Dictionary<IAutobalanceParameter, BindableBool>();
         private bool autobalanceRunning;
         private AutobalanceRunner autobalanceRunner = null!;
 
@@ -234,6 +241,11 @@ namespace PerformanceCalculatorGUI.Screens
                                                                     Font = OsuFont.GetFont(size: 16, weight: FontWeight.SemiBold),
                                                                     Margin = new MarginPadding { Bottom = 2 }
                                                                 },
+                                                                new OverlaySortTabControl<AutobalanceRuleset>
+                                                                {
+                                                                    Title = "Ruleset",
+                                                                    Current = { BindTarget = autobalanceRuleset }
+                                                                },
                                                                 new OverlaySortTabControl<AutobalanceTarget>
                                                                 {
                                                                     Title = "Target",
@@ -345,9 +357,20 @@ namespace PerformanceCalculatorGUI.Screens
                 if (currentCollection.Value != null)
                     calculateScores();
             });
+            catchTuningManager.Current.BindValueChanged(_ =>
+            {
+                if (currentCollection.Value != null)
+                    calculateScores();
+            });
 
             autobalanceRunner = new AutobalanceRunner(scoreCache, rulesets, configManager);
-            createAutobalanceParameterControls();
+            autobalanceRuleset.BindValueChanged(_ =>
+            {
+                if (autobalanceRuleset.Value == AutobalanceRuleset.Catch)
+                    autobalanceTarget.Value = AutobalanceTarget.Total;
+
+                createAutobalanceParameterControls();
+            }, true);
             loadCollectionList();
 
             if (RuntimeInfo.IsDesktop)
@@ -406,7 +429,7 @@ namespace PerformanceCalculatorGUI.Screens
             autobalanceParametersContainer.Clear();
             autobalanceParameterStates.Clear();
 
-            foreach (var parameter in AutobalanceRunner.Parameters)
+            foreach (var parameter in AutobalanceRunner.GetParameters(autobalanceRuleset.Value))
             {
                 var bindable = new BindableBool { Value = parameter.DefaultEnabled };
                 autobalanceParameterStates[parameter] = bindable;
@@ -522,33 +545,46 @@ namespace PerformanceCalculatorGUI.Screens
             var collection = currentCollection.Value;
             var target = autobalanceTarget.Value;
 
-            autobalanceRunner.RunAsync(collection, target, selectedParameters, tuningManager.Current.Value, onAutobalanceProgress).ContinueWith(t =>
+            if (autobalanceRuleset.Value == AutobalanceRuleset.Osu)
             {
-                if (t.Exception != null)
-                    Logger.Log(t.Exception.ToString(), level: LogLevel.Error);
+                var osuParameters = selectedParameters.Cast<AutobalanceParameter<OsuDifficultyConstants>>().ToArray();
+                autobalanceRunner.RunAsync(collection, target, osuParameters, tuningManager.Current.Value, onAutobalanceProgress)
+                                 .ContinueWith(t => handleAutobalanceResult(t, tuning => tuningManager.Current.Value = tuning), TaskContinuationOptions.None);
+            }
+            else
+            {
+                var catchParameters = selectedParameters.Cast<AutobalanceParameter<CatchDifficultyConstants>>().ToArray();
+                autobalanceRunner.RunCatchAsync(collection, target, catchParameters, catchTuningManager.Current.Value, onAutobalanceProgress)
+                                 .ContinueWith(t => handleAutobalanceResult(t, tuning => catchTuningManager.Current.Value = tuning), TaskContinuationOptions.None);
+            }
+        }
 
-                Schedule(() =>
+        private void handleAutobalanceResult<TTuning>(Task<AutobalanceResult<TTuning>> task, Action<TTuning> applyTuning)
+        {
+            if (task.Exception != null)
+                Logger.Log(task.Exception.ToString(), level: LogLevel.Error);
+
+            Schedule(() =>
+            {
+                loadingLayer.Hide();
+
+                AutobalanceResult<TTuning> result = task.IsFaulted ? AutobalanceResult<TTuning>.Failure("Autobalance failed.") : task.GetResultSafely();
+
+                if (task.IsFaulted || result.IsFailure)
                 {
-                    loadingLayer.Hide();
+                    string message = task.IsFaulted
+                        ? task.Exception?.Flatten().Message ?? "Autobalance failed."
+                        : result.ErrorMessage ?? "Autobalance failed.";
 
-                    AutobalanceResult result = t.IsFaulted ? AutobalanceResult.Failure("Autobalance failed.") : t.GetResultSafely();
+                    notificationDisplay.Display(new Notification(message));
+                    setAutobalanceState(false, "Failed");
+                    return;
+                }
 
-                    if (t.IsFaulted || result.IsFailure)
-                    {
-                        string message = t.IsFaulted
-                            ? t.Exception?.Flatten().Message ?? "Autobalance failed."
-                            : result.ErrorMessage ?? "Autobalance failed.";
-
-                        notificationDisplay.Display(new Notification(message));
-                        setAutobalanceState(false, "Failed");
-                        return;
-                    }
-
-                    tuningManager.Current.Value = result.Tuning!;
-                    setAutobalanceProgress(1);
-                    setAutobalanceState(false, $"RMSE {result.Rmse:0.##}pp ({result.SampleCount} scores)");
-                });
-            }, TaskContinuationOptions.None);
+                applyTuning(result.Tuning!);
+                setAutobalanceProgress(1);
+                setAutobalanceState(false, $"RMSE {result.Rmse:0.##}pp ({result.SampleCount} scores)");
+            });
         }
 
         private void resetAutobalanceUi()
@@ -645,9 +681,12 @@ namespace PerformanceCalculatorGUI.Screens
             if (apiScore != null)
             {
                 var rulesetInfo = rulesets.GetRuleset(apiScore.RulesetID)!;
-                rulesetInstance = rulesetInfo.ShortName == "osu"
-                    ? new OsuRuleset(tuningManager.Current.Value)
-                    : rulesetInfo.CreateInstance();
+                rulesetInstance = rulesetInfo.ShortName switch
+                {
+                    "osu" => new OsuRuleset(tuningManager.Current.Value),
+                    "fruits" => new CatchRuleset(catchTuningManager.Current.Value),
+                    _ => rulesetInfo.CreateInstance()
+                };
                 working = ProcessorWorkingBeatmap.FromFileOrId(apiScore.BeatmapID.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
 
                 mods = apiScore.Mods.Select(x => x.ToMod(rulesetInstance)).ToArray();
@@ -658,9 +697,12 @@ namespace PerformanceCalculatorGUI.Screens
             else
             {
                 var rulesetInfo = rulesets.GetRuleset(entry.RulesetId)!;
-                rulesetInstance = rulesetInfo.ShortName == "osu"
-                    ? new OsuRuleset(tuningManager.Current.Value)
-                    : rulesetInfo.CreateInstance();
+                rulesetInstance = rulesetInfo.ShortName switch
+                {
+                    "osu" => new OsuRuleset(tuningManager.Current.Value),
+                    "fruits" => new CatchRuleset(catchTuningManager.Current.Value),
+                    _ => rulesetInfo.CreateInstance()
+                };
                 working = ProcessorWorkingBeatmap.FromFileOrId(entry.BeatmapId.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
                 mods = CollectionModSerializer.Deserialize(entry.Mods, rulesetInstance);
 

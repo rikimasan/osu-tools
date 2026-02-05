@@ -21,6 +21,7 @@ using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Rulesets;
+using osu.Game.Rulesets.Catch;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Osu;
 using osuTK;
@@ -76,6 +77,9 @@ namespace PerformanceCalculatorGUI.Screens
 
         [Resolved]
         private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
+
+        [Resolved]
+        private CatchDifficultyTuningManager catchTuningManager { get; set; } = null!;
 
         public override bool ShouldShowConfirmationDialogOnSwitch => false;
 
@@ -244,6 +248,11 @@ namespace PerformanceCalculatorGUI.Screens
                 if (currentUsers.Length > 0)
                     calculateProfiles(currentUsers);
             });
+            catchTuningManager.Current.BindValueChanged(_ =>
+            {
+                if (currentUsers.Length > 0)
+                    calculateProfiles(currentUsers);
+            });
 
             if (RuntimeInfo.IsDesktop)
                 HotReloadCallbackReceiver.CompilationFinished += _ => Schedule(() => { calculateProfiles(currentUsers); });
@@ -294,9 +303,12 @@ namespace PerformanceCalculatorGUI.Screens
 
                 var plays = new List<ExtendedScore>();
                 var players = new List<APIUser>();
-                var rulesetInstance = ruleset.Value.ShortName == "osu"
-                    ? new OsuRuleset(tuningManager.Current.Value)
-                    : ruleset.Value.CreateInstance();
+                var rulesetInstance = ruleset.Value.ShortName switch
+                {
+                    "osu" => new OsuRuleset(tuningManager.Current.Value),
+                    "fruits" => new CatchRuleset(catchTuningManager.Current.Value),
+                    _ => ruleset.Value.CreateInstance()
+                };
 
                 foreach (string username in currentUsers)
                 {

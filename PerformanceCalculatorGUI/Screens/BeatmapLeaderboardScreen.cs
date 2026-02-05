@@ -20,6 +20,7 @@ using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Overlays.BeatmapSet.Scores;
 using osu.Game.Rulesets;
+using osu.Game.Rulesets.Catch;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Osu;
 using osu.Game.Scoring;
@@ -64,6 +65,9 @@ namespace PerformanceCalculatorGUI.Screens
 
         [Resolved]
         private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
+
+        [Resolved]
+        private CatchDifficultyTuningManager catchTuningManager { get; set; } = null!;
 
         public override bool ShouldShowConfirmationDialogOnSwitch => false;
 
@@ -200,6 +204,11 @@ namespace PerformanceCalculatorGUI.Screens
                 if (!string.IsNullOrWhiteSpace(beatmapIdTextBox.Current.Value))
                     calculate();
             });
+            catchTuningManager.Current.BindValueChanged(_ =>
+            {
+                if (!string.IsNullOrWhiteSpace(beatmapIdTextBox.Current.Value))
+                    calculate();
+            });
             beatmapIdTextBox.OnCommit += (_, _) => { calculate(); };
 
             if (RuntimeInfo.IsDesktop)
@@ -247,9 +256,12 @@ namespace PerformanceCalculatorGUI.Screens
 
                 var plays = new List<SoloScoreInfo>();
 
-                var rulesetInstance = ruleset.Value.ShortName == "osu"
-                    ? new OsuRuleset(tuningManager.Current.Value)
-                    : ruleset.Value.CreateInstance();
+                var rulesetInstance = ruleset.Value.ShortName switch
+                {
+                    "osu" => new OsuRuleset(tuningManager.Current.Value),
+                    "fruits" => new CatchRuleset(catchTuningManager.Current.Value),
+                    _ => ruleset.Value.CreateInstance()
+                };
 
                 var working = ProcessorWorkingBeatmap.FromFileOrId(beatmap, cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
 

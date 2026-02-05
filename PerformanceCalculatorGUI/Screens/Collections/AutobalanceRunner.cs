@@ -11,6 +11,8 @@ using MathNet.Numerics.LinearAlgebra;
 using osu.Framework.Logging;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Rulesets;
+using osu.Game.Rulesets.Catch;
+using osu.Game.Rulesets.Catch.Difficulty;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Osu;
@@ -46,12 +48,37 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             this.configManager = configManager;
         }
 
-        public static IReadOnlyList<AutobalanceParameter> Parameters => parameters;
+        private const string osu_ruleset_short_name = "osu";
+        private const string catch_ruleset_short_name = "fruits";
 
-        private static readonly AutobalanceParameter[] parameters = createAutobalanceParameters();
+        public static IReadOnlyList<AutobalanceParameter<OsuDifficultyConstants>> OsuParameters => osuParameters;
+        public static IReadOnlyList<AutobalanceParameter<CatchDifficultyConstants>> CatchParameters => catchParameters;
 
-        private static AutobalanceParameter[] createAutobalanceParameters() =>
-            OsuDifficultyTuningParameters.All.Select(parameter => new AutobalanceParameter(parameter)).ToArray();
+        public static IReadOnlyList<IAutobalanceParameter> GetParameters(AutobalanceRuleset ruleset) =>
+            ruleset == AutobalanceRuleset.Catch ? catchParametersForUi : osuParametersForUi;
+
+        private static readonly AutobalanceParameter<OsuDifficultyConstants>[] osuParameters = createOsuAutobalanceParameters();
+        private static readonly AutobalanceParameter<CatchDifficultyConstants>[] catchParameters = createCatchAutobalanceParameters();
+        private static readonly IAutobalanceParameter[] osuParametersForUi = osuParameters;
+        private static readonly IAutobalanceParameter[] catchParametersForUi = catchParameters;
+
+        private static AutobalanceParameter<OsuDifficultyConstants>[] createOsuAutobalanceParameters() =>
+            OsuDifficultyTuningParameters.All.Select(parameter => new AutobalanceParameter<OsuDifficultyConstants>(
+                parameter.AutobalanceLabel,
+                parameter.IsInteger,
+                parameter.AutobalanceMinValue,
+                parameter.DefaultEnabled,
+                parameter.Getter,
+                parameter.Setter)).ToArray();
+
+        private static AutobalanceParameter<CatchDifficultyConstants>[] createCatchAutobalanceParameters() =>
+            CatchDifficultyTuningParameters.All.Select(parameter => new AutobalanceParameter<CatchDifficultyConstants>(
+                parameter.AutobalanceLabel,
+                parameter.IsInteger,
+                parameter.AutobalanceMinValue,
+                parameter.DefaultEnabled,
+                parameter.Getter,
+                parameter.Setter)).ToArray();
 
         private sealed class ProgressReporter
         {
@@ -94,19 +121,38 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             }
         }
 
-        public Task<AutobalanceResult> RunAsync(Collection collection, AutobalanceTarget target, AutobalanceParameter[] selectedParameters,
-                                                OsuDifficultyConstants baseTuning, Action<AutobalanceProgress>? progress = null)
+        public Task<AutobalanceResult<OsuDifficultyConstants>> RunAsync(Collection collection, AutobalanceTarget target, AutobalanceParameter<OsuDifficultyConstants>[] selectedParameters,
+                                                                        OsuDifficultyConstants baseTuning, Action<AutobalanceProgress>? progress = null)
+        {
+            return runAutobalanceAsync(collection, target, selectedParameters, baseTuning, osu_ruleset_short_name,
+                tuning => new OsuRuleset(tuning), getOsuTargetValue, progress);
+        }
+
+        public Task<AutobalanceResult<CatchDifficultyConstants>> RunCatchAsync(Collection collection, AutobalanceTarget target, AutobalanceParameter<CatchDifficultyConstants>[] selectedParameters,
+                                                                              CatchDifficultyConstants baseTuning, Action<AutobalanceProgress>? progress = null)
+        {
+            if (target != AutobalanceTarget.Total)
+                return Task.FromResult(AutobalanceResult<CatchDifficultyConstants>.Failure("Catch autobalance supports only Total target."));
+
+            return runAutobalanceAsync(collection, target, selectedParameters, baseTuning, catch_ruleset_short_name,
+                tuning => new CatchRuleset(tuning), getCatchTargetValue, progress);
+        }
+
+        private Task<AutobalanceResult<TTuning>> runAutobalanceAsync<TTuning>(Collection collection, AutobalanceTarget target, AutobalanceParameter<TTuning>[] selectedParameters,
+                                                                              TTuning baseTuning, string rulesetShortName, Func<TTuning, Ruleset> createRuleset,
+                                                                              Func<PerformanceAttributes?, AutobalanceTarget, double?> getTargetValue,
+                                                                              Action<AutobalanceProgress>? progress = null)
         {
             return Task.Run(async () =>
             {
                 var reporter = new ProgressReporter(progress);
                 reporter.Report(0, stage: "Preparing...");
 
-                var dataset = await buildAutobalanceDataset(collection, target, reporter).ConfigureAwait(false);
+                var dataset = await buildAutobalanceDataset(collection, target, reporter, rulesetShortName).ConfigureAwait(false);
                 if (dataset.Count == 0)
                 {
                     reporter.Report(1, stage: "Failed");
-                    return AutobalanceResult.Failure($"No expected values found for {getTargetLabel(target)}.");
+                    return AutobalanceResult<TTuning>.Failure($"No expected values found for {getTargetLabel(target)}.");
                 }
 
                 selectedParameters = selectedParameters.Where(p => !p.IsInteger).ToArray();
@@ -115,10 +161,10 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 {
                     reporter.Report(dataset_progress_portion, stage: "Evaluating...");
                     var empty = Vector<double>.Build.Dense(0);
-                    double mse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, empty);
+                    double mse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, empty, createRuleset, getTargetValue);
                     double rmse = Math.Sqrt(mse);
                     reporter.Report(1, stage: "Done");
-                    return AutobalanceResult.Success(baseTuning, rmse, dataset.Count);
+                    return AutobalanceResult<TTuning>.Success(baseTuning, rmse, dataset.Count);
                 }
 
                 int n = selectedParameters.Length;
@@ -134,7 +180,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 
                 Func<Vector<double>, double> f = point =>
                 {
-                    double mse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, point);
+                    double mse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, point, createRuleset, getTargetValue);
 
                     evalCount++;
 
@@ -162,11 +208,11 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 double rmseAtMin = Math.Sqrt(mseAtMin);
 
                 reporter.Report(1, stage: "Done");
-                return AutobalanceResult.Success(balancedTuning, rmseAtMin, dataset.Count);
+                return AutobalanceResult<TTuning>.Success(balancedTuning, rmseAtMin, dataset.Count);
             });
         }
 
-        private static (Vector<double> lower, Vector<double> upper) buildBounds(AutobalanceParameter[] parameters, OsuDifficultyConstants baseTuning)
+        private static (Vector<double> lower, Vector<double> upper) buildBounds<TTuning>(AutobalanceParameter<TTuning>[] parameters, TTuning baseTuning)
         {
             int n = parameters.Length;
 
@@ -206,7 +252,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             return y;
         }
 
-        private async Task<List<AutobalanceScoreData>> buildAutobalanceDataset(Collection collection, AutobalanceTarget target, ProgressReporter reporter)
+        private async Task<List<AutobalanceScoreData>> buildAutobalanceDataset(Collection collection, AutobalanceTarget target, ProgressReporter reporter, string rulesetShortName)
         {
             var dataset = new List<AutobalanceScoreData>();
 
@@ -270,7 +316,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 if (score != null)
                 {
                     rulesetInfo = rulesets.GetRuleset(score.RulesetID);
-                    if (rulesetInfo?.ShortName != "osu")
+                    if (rulesetInfo?.ShortName != rulesetShortName)
                     {
                         reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
                         continue;
@@ -293,7 +339,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 else
                 {
                     rulesetInfo = rulesets.GetRuleset(entry.RulesetId);
-                    if (rulesetInfo?.ShortName != "osu")
+                    if (rulesetInfo?.ShortName != rulesetShortName)
                     {
                         reporter.Report(dataset_progress_portion * (i + 1) / total, stage: "Loading scores", completed: i + 1, total: total);
                         continue;
@@ -336,13 +382,14 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             return dataset;
         }
 
-        private double evaluateAutobalance(IReadOnlyList<AutobalanceScoreData> dataset, AutobalanceParameter[] parameters, OsuDifficultyConstants baseTuning,
-                                           AutobalanceTarget target, Vector<double> values)
+        private double evaluateAutobalance<TTuning>(IReadOnlyList<AutobalanceScoreData> dataset, AutobalanceParameter<TTuning>[] parameters, TTuning baseTuning,
+                                                    AutobalanceTarget target, Vector<double> values, Func<TTuning, Ruleset> createRuleset,
+                                                    Func<PerformanceAttributes?, AutobalanceTarget, double?> getTargetValue)
         {
             try
             {
                 var tuning = applyAutobalanceParameters(baseTuning, parameters, values);
-                var ruleset = new OsuRuleset(tuning);
+                var ruleset = createRuleset(tuning);
                 var performanceCalculator = ruleset.CreatePerformanceCalculator();
 
                 if (performanceCalculator == null)
@@ -374,7 +421,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             }
         }
 
-        private static OsuDifficultyConstants applyAutobalanceParameters(OsuDifficultyConstants baseTuning, AutobalanceParameter[] parameters, Vector<double> values)
+        private static TTuning applyAutobalanceParameters<TTuning>(TTuning baseTuning, AutobalanceParameter<TTuning>[] parameters, Vector<double> values)
         {
             var tuning = baseTuning;
 
@@ -411,7 +458,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             return expectedValues.Skills.TryGetValue(key, out expectedValue);
         }
 
-        private static double? getTargetValue(PerformanceAttributes? attributes, AutobalanceTarget target)
+        private static double? getOsuTargetValue(PerformanceAttributes? attributes, AutobalanceTarget target)
         {
             if (attributes == null)
                 return null;
@@ -426,6 +473,14 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 AutobalanceTarget.Flashlight => (attributes as OsuPerformanceAttributes)?.Flashlight,
                 _ => null
             };
+        }
+
+        private static double? getCatchTargetValue(PerformanceAttributes? attributes, AutobalanceTarget target)
+        {
+            if (attributes == null || target != AutobalanceTarget.Total)
+                return null;
+
+            return attributes.Total;
         }
 
         private static string getTargetKey(AutobalanceTarget target)
@@ -473,26 +528,43 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         Flashlight
     }
 
-    public sealed class AutobalanceParameter
+    public enum AutobalanceRuleset
+    {
+        [System.ComponentModel.Description("osu!")]
+        Osu,
+        [System.ComponentModel.Description("catch")]
+        Catch
+    }
+
+    public interface IAutobalanceParameter
     {
         public string Label { get; }
-        public Func<OsuDifficultyConstants, double> Getter { get; }
-        public Func<OsuDifficultyConstants, double, OsuDifficultyConstants> Setter { get; }
+        public double MinValue { get; }
+        public bool IsInteger { get; }
+        public bool DefaultEnabled { get; }
+    }
+
+    public sealed class AutobalanceParameter<TTuning> : IAutobalanceParameter
+    {
+        public string Label { get; }
+        public Func<TTuning, double> Getter { get; }
+        public Func<TTuning, double, TTuning> Setter { get; }
         public double MinValue { get; }
         public bool IsInteger { get; }
         public bool DefaultEnabled { get; }
 
-        public AutobalanceParameter(OsuDifficultyTuningParameter definition)
+        public AutobalanceParameter(string label, bool isInteger, double minValue, bool defaultEnabled,
+                                    Func<TTuning, double> getter, Func<TTuning, double, TTuning> setter)
         {
-            Label = definition.AutobalanceLabel;
-            Getter = definition.Getter;
-            Setter = definition.Setter;
-            MinValue = definition.AutobalanceMinValue;
-            IsInteger = definition.IsInteger;
-            DefaultEnabled = definition.DefaultEnabled;
+            Label = label;
+            IsInteger = isInteger;
+            MinValue = minValue;
+            DefaultEnabled = defaultEnabled;
+            Getter = getter;
+            Setter = setter;
         }
 
-        public OsuDifficultyConstants Apply(OsuDifficultyConstants tuning, double value)
+        public TTuning Apply(TTuning tuning, double value)
         {
             if (double.IsNaN(value) || double.IsInfinity(value))
                 return tuning;
@@ -540,15 +612,15 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         }
     }
 
-    public readonly struct AutobalanceResult
+    public readonly struct AutobalanceResult<TTuning>
     {
         public bool IsFailure { get; }
-        public OsuDifficultyConstants? Tuning { get; }
+        public TTuning? Tuning { get; }
         public double Rmse { get; }
         public int SampleCount { get; }
         public string? ErrorMessage { get; }
 
-        private AutobalanceResult(OsuDifficultyConstants tuning, double rmse, int sampleCount)
+        private AutobalanceResult(TTuning tuning, double rmse, int sampleCount)
         {
             IsFailure = false;
             Tuning = tuning;
@@ -566,7 +638,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             ErrorMessage = errorMessage;
         }
 
-        public static AutobalanceResult Success(OsuDifficultyConstants tuning, double rmse, int sampleCount) => new AutobalanceResult(tuning, rmse, sampleCount);
-        public static AutobalanceResult Failure(string errorMessage) => new AutobalanceResult(errorMessage);
+        public static AutobalanceResult<TTuning> Success(TTuning tuning, double rmse, int sampleCount) => new AutobalanceResult<TTuning>(tuning, rmse, sampleCount);
+        public static AutobalanceResult<TTuning> Failure(string errorMessage) => new AutobalanceResult<TTuning>(errorMessage);
     }
 }

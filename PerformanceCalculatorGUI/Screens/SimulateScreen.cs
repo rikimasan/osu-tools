@@ -28,6 +28,7 @@ using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Rulesets;
+using osu.Game.Rulesets.Catch;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Osu;
@@ -123,6 +124,9 @@ namespace PerformanceCalculatorGUI.Screens
 
         [Resolved]
         private OsuDifficultyTuningManager tuningManager { get; set; } = null!;
+
+        [Resolved]
+        private CatchDifficultyTuningManager catchTuningManager { get; set; } = null!;
 
         [Cached]
         private OverlayColourProvider colourProvider = new OverlayColourProvider(OverlayColourScheme.Blue);
@@ -557,6 +561,7 @@ namespace PerformanceCalculatorGUI.Screens
             comboTextBox.Value.BindValueChanged(_ => debouncedCalculatePerformance());
             scoreTextBox.Value.BindValueChanged(_ => debouncedCalculatePerformance());
             tuningManager.Current.BindValueChanged(_ => recalculateForTuning(), true);
+            catchTuningManager.Current.BindValueChanged(_ => recalculateForTuning(), true);
 
             fullScoreDataSwitch.Current.BindValueChanged(val => updateAccuracyParams(val.NewValue));
 
@@ -710,13 +715,18 @@ namespace PerformanceCalculatorGUI.Screens
             if (working is null)
                 return;
 
-            var tuning = tuningManager.Current.Value;
-            var rulesetInstance = ruleset.Value.ShortName == "osu"
-                ? new OsuRuleset(tuning)
-                : ruleset.Value.CreateInstance();
+            var osuTuning = tuningManager.Current.Value;
+            var catchTuning = catchTuningManager.Current.Value;
+            var rulesetInstance = ruleset.Value.ShortName switch
+            {
+                "osu" => new OsuRuleset(osuTuning),
+                "fruits" => new CatchRuleset(catchTuning),
+                _ => ruleset.Value.CreateInstance()
+            };
 
             difficultyCalculator.Value = RulesetHelper.GetExtendedDifficultyCalculator(ruleset.Value, working,
-                ruleset.Value.ShortName == "osu" ? tuning : null);
+                ruleset.Value.ShortName == "osu" ? osuTuning : null,
+                ruleset.Value.ShortName == "fruits" ? catchTuning : null);
             performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
         }
 
@@ -727,8 +737,17 @@ namespace PerformanceCalculatorGUI.Screens
 
             try
             {
-                var rulesetInstance = ruleset.Value.CreateInstance();
-                var extendedDifficultyCalculator = RulesetHelper.GetExtendedDifficultyCalculator(ruleset.Value, working);
+                var osuTuning = tuningManager.Current.Value;
+                var catchTuning = catchTuningManager.Current.Value;
+                var rulesetInstance = ruleset.Value.ShortName switch
+                {
+                    "osu" => new OsuRuleset(osuTuning),
+                    "fruits" => new CatchRuleset(catchTuning),
+                    _ => ruleset.Value.CreateInstance()
+                };
+                var extendedDifficultyCalculator = RulesetHelper.GetExtendedDifficultyCalculator(ruleset.Value, working,
+                    ruleset.Value.ShortName == "osu" ? osuTuning : null,
+                    ruleset.Value.ShortName == "fruits" ? catchTuning : null);
                 performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
 
                 difficultyAttributes = extendedDifficultyCalculator.Calculate(appliedMods.Value);
