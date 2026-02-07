@@ -391,25 +391,31 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 double weightSum = 0;
                 object errorLock = new object();
 
-                Parallel.ForEach(dataset, entry =>
-                {
-                    var difficultyCalculator = ruleset.CreateDifficultyCalculator(entry.Working);
-                    var difficultyAttributes = difficultyCalculator.Calculate(entry.Mods);
-                    var performanceAttributes = performanceCalculator.Calculate(entry.ScoreInfo, difficultyAttributes);
-                    double? actual = getTargetValue(performanceAttributes, target);
-
-                    if (actual == null)
-                        return;
-
-                    double diff = actual.Value - entry.ExpectedValue;
-                    double sq = diff * diff;
-
-                    lock (errorLock)
+                Parallel.ForEach(dataset,
+                    () => (weightedError: 0.0, weight: 0.0),
+                    (entry, _, local) =>
                     {
-                        weightedErrorSum += entry.Weight * sq;
-                        weightSum += entry.Weight;
-                    }
-                });
+                        var difficultyCalculator = ruleset.CreateDifficultyCalculator(entry.Working);
+                        var difficultyAttributes = difficultyCalculator.Calculate(entry.Mods);
+                        var performanceAttributes = performanceCalculator.Calculate(entry.ScoreInfo, difficultyAttributes);
+                        double? actual = getTargetValue(performanceAttributes, target);
+
+                        if (actual == null)
+                            return local;
+
+                        double diff = actual.Value - entry.ExpectedValue;
+                        double sq = diff * diff;
+
+                        return (local.weightedError + entry.Weight * sq, local.weight + entry.Weight);
+                    },
+                    local =>
+                    {
+                        lock (errorLock)
+                        {
+                            weightedErrorSum += local.weightedError;
+                            weightSum += local.weight;
+                        }
+                    });
 
                 return weightSum > 0 ? weightedErrorSum / weightSum : big_penalty;
             }

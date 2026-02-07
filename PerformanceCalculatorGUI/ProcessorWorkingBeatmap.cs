@@ -2,15 +2,19 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using osu.Framework.Audio;
 using osu.Framework.Audio.Track;
 using osu.Framework.Graphics.Textures;
 using osu.Game.Beatmaps;
 using osu.Game.Beatmaps.Formats;
 using osu.Game.IO;
+using osu.Game.Rulesets;
+using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Objects.Types;
 using osu.Game.Skinning;
 using FileWebRequest = osu.Framework.IO.Network.FileWebRequest;
@@ -106,6 +110,18 @@ namespace PerformanceCalculatorGUI
                 File.Delete(cachePath);
                 throw;
             }
+        }
+
+        private IBeatmap? cachedPlayableBeatmap;
+
+        /// <summary>
+        /// Caches the result of <see cref="WorkingBeatmap.GetPlayableBeatmap"/> so that repeated
+        /// difficulty calculations on the same beatmap+mods (e.g. during autobalance) do not
+        /// re-convert the beatmap from scratch every time.
+        /// </summary>
+        public override IBeatmap GetPlayableBeatmap(IRulesetInfo ruleset, IReadOnlyList<Mod> mods, CancellationToken token)
+        {
+            return cachedPlayableBeatmap ??= base.GetPlayableBeatmap(ruleset, mods, token);
         }
 
         protected override Track? GetBeatmapTrack()
