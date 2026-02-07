@@ -316,7 +316,8 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                     var scoreInfo = score.ToScoreInfo(rulesets, working.BeatmapInfo);
                     var parsedScore = new ProcessorScoreDecoder(working).Parse(scoreInfo);
 
-                    dataset.Add(new AutobalanceScoreData(working, mods, parsedScore.ScoreInfo, expectedValue));
+                    double weight = expectedValues.Weight ?? 1.0;
+                    dataset.Add(new AutobalanceScoreData(working, mods, parsedScore.ScoreInfo, expectedValue, weight));
                 }
                 catch (Exception e)
                 {
@@ -356,7 +357,8 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                         var scoreInfo = soloScore.ToScoreInfo(rulesets, working.BeatmapInfo);
                         var parsedScore = new ProcessorScoreDecoder(working).Parse(scoreInfo);
 
-                        dataset.Add(new AutobalanceScoreData(working, mods, parsedScore.ScoreInfo, expectedValue));
+                        double weight = expectedValues.Weight ?? 1.0;
+                        dataset.Add(new AutobalanceScoreData(working, mods, parsedScore.ScoreInfo, expectedValue, weight));
                     }
                     catch (Exception e)
                     {
@@ -385,8 +387,8 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 if (performanceCalculator == null)
                     return big_penalty;
 
-                double errorSum = 0;
-                int count = 0;
+                double weightedErrorSum = 0;
+                double weightSum = 0;
                 object errorLock = new object();
 
                 Parallel.ForEach(dataset, entry =>
@@ -404,12 +406,12 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 
                     lock (errorLock)
                     {
-                        errorSum += sq;
-                        count++;
+                        weightedErrorSum += entry.Weight * sq;
+                        weightSum += entry.Weight;
                     }
                 });
 
-                return count > 0 ? errorSum / count : big_penalty;
+                return weightSum > 0 ? weightedErrorSum / weightSum : big_penalty;
             }
             catch
             {
@@ -595,13 +597,15 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         public Mod[] Mods { get; }
         public ScoreInfo ScoreInfo { get; }
         public double ExpectedValue { get; }
+        public double Weight { get; }
 
-        public AutobalanceScoreData(ProcessorWorkingBeatmap working, Mod[] mods, ScoreInfo scoreInfo, double expectedValue)
+        public AutobalanceScoreData(ProcessorWorkingBeatmap working, Mod[] mods, ScoreInfo scoreInfo, double expectedValue, double weight = 1.0)
         {
             Working = working;
             Mods = mods;
             ScoreInfo = scoreInfo;
             ExpectedValue = expectedValue;
+            Weight = weight;
         }
     }
 

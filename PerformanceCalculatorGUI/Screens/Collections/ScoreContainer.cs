@@ -172,6 +172,8 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             };
             expectedValuesContainer.Add(expectedValuesRows);
 
+            expectedValuesRows.Add(createWeightRow(expectedValues?.Weight));
+
             if (numericAttributes.TryGetValue("total", out double total))
             {
                 expectedValuesRows.Add(createExpectedRow("total", total, expectedValues?.Total, setExpectedTotal));
@@ -317,6 +319,58 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             diffText.Colour = getDifferenceColour(difference);
         }
 
+        private Drawable createWeightRow(double? weight)
+        {
+            var weightBox = new NullableLabelledFractionalNumberBox
+            {
+                RelativeSizeAxes = Axes.X,
+                Label = "weight",
+                FixedLabelWidth = expected_label_width,
+                PlaceholderText = "1",
+                CommitOnFocusLoss = true,
+                MinValue = 0
+            };
+
+            if (weight.HasValue)
+            {
+                weightBox.Text = weight.Value.ToString("0.##", CultureInfo.CurrentCulture);
+                weightBox.Value.Value = weight;
+            }
+            else
+            {
+                weightBox.Text = string.Empty;
+                weightBox.Value.Value = null;
+            }
+
+            weightBox.Value.BindValueChanged(value =>
+            {
+                setWeight(value.NewValue);
+                scheduleExpectedSave();
+            });
+
+            return new Container
+            {
+                RelativeSizeAxes = Axes.X,
+                Height = expected_row_height,
+                Child = weightBox
+            };
+        }
+
+        private void setWeight(double? value)
+        {
+            if (value == null)
+            {
+                if (expectedValues == null)
+                    return;
+
+                expectedValues.Weight = null;
+                pruneExpectedValuesIfEmpty();
+                return;
+            }
+
+            ensureExpectedValues().Weight = value;
+        }
+
         private void setExpectedTotal(double? value)
         {
             if (value == null)
@@ -362,7 +416,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             if (expectedValues == null)
                 return;
 
-            if (expectedValues.Total == null && expectedValues.Skills.Count == 0)
+            if (expectedValues.Total == null && expectedValues.Weight == null && expectedValues.Skills.Count == 0)
             {
                 expectedValuesByKey.Remove(expectedValuesKey);
                 expectedValues = null;

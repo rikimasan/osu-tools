@@ -8,6 +8,7 @@ namespace PerformanceCalculatorGUI.Screens.Collections
     public class ExpectedPerformanceValues
     {
         public double? Total { get; set; }
+        public double? Weight { get; set; }
         public Dictionary<string, double> Skills { get; set; } = new Dictionary<string, double>();
     }
 }

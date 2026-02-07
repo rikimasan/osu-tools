@@ -792,7 +792,7 @@ namespace PerformanceCalculatorGUI.Screens
 
             var target = autobalanceTarget.Value;
             int targetRulesetId = autobalanceRuleset.Value == AutobalanceRuleset.Catch ? 2 : 0;
-            var pairs = new List<(double actual, double expected)>();
+            var pairs = new List<(double actual, double expected, double weight)>();
 
             foreach (var container in scoresList.Children)
             {
@@ -814,7 +814,8 @@ namespace PerformanceCalculatorGUI.Screens
                 if (actualValue == null)
                     continue;
 
-                pairs.Add((actualValue.Value, expectedValue));
+                double weight = expectedValues.Weight ?? 1.0;
+                pairs.Add((actualValue.Value, expectedValue, weight));
             }
 
             if (pairs.Count == 0)
@@ -823,8 +824,9 @@ namespace PerformanceCalculatorGUI.Screens
                 return;
             }
 
-            double mse = pairs.Sum(p => (p.actual - p.expected) * (p.actual - p.expected)) / pairs.Count;
-            double rmse = Math.Sqrt(mse);
+            double weightSum = pairs.Sum(p => p.weight);
+            double weightedMse = pairs.Sum(p => p.weight * (p.actual - p.expected) * (p.actual - p.expected)) / weightSum;
+            double rmse = Math.Sqrt(weightedMse);
 
             if (pairs.Count < 2)
             {
@@ -832,7 +834,7 @@ namespace PerformanceCalculatorGUI.Screens
                 return;
             }
 
-            double spearman = computeSpearmanCorrelation(pairs);
+            double spearman = computeSpearmanCorrelation(pairs.Select(p => (p.actual, p.expected)).ToList());
             autobalanceStatusText.Text = $"Ready — RMSE {rmse:0.##}pp, \u03c1={spearman:0.###} ({pairs.Count} scores)";
         }
 
