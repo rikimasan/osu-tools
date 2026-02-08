@@ -762,7 +762,7 @@ namespace PerformanceCalculatorGUI.Screens
 
                 applyTuning(result.Tuning!);
                 setAutobalanceProgress(1);
-                setAutobalanceState(false, $"RMSE {result.Rmse:0.##}pp ({result.SampleCount} scores)");
+                setAutobalanceState(false, $"RMSE {result.Rmse:0.##}pp, \u03c1={result.Spearman:0.###} ({result.SampleCount} scores)");
             });
         }
 
@@ -834,7 +834,10 @@ namespace PerformanceCalculatorGUI.Screens
                 return;
             }
 
-            double spearman = computeSpearmanCorrelation(pairs.Select(p => (p.actual, p.expected)).ToList());
+            double spearman = AutobalanceRunner.ComputeSpearmanCorrelation(
+                pairs.Select(p => p.actual).ToArray(),
+                pairs.Select(p => p.expected).ToArray(),
+                pairs.Count);
             autobalanceStatusText.Text = $"Ready — RMSE {rmse:0.##}pp, \u03c1={spearman:0.###} ({pairs.Count} scores)";
         }
 
@@ -853,53 +856,6 @@ namespace PerformanceCalculatorGUI.Screens
                 AutobalanceTarget.Flashlight => (attributes as OsuPerformanceAttributes)?.Flashlight,
                 _ => null
             };
-        }
-
-        private static double computeSpearmanCorrelation(List<(double actual, double expected)> pairs)
-        {
-            int n = pairs.Count;
-
-            if (n < 2)
-                return 0;
-
-            double[] actualRanks = computeRanks(pairs.Select(p => p.actual).ToArray());
-            double[] expectedRanks = computeRanks(pairs.Select(p => p.expected).ToArray());
-
-            double sumDSq = 0;
-
-            for (int i = 0; i < n; i++)
-            {
-                double d = actualRanks[i] - expectedRanks[i];
-                sumDSq += d * d;
-            }
-
-            return 1.0 - 6.0 * sumDSq / (n * ((double)n * n - 1));
-        }
-
-        private static double[] computeRanks(double[] values)
-        {
-            int n = values.Length;
-            var indexed = values.Select((v, i) => (value: v, index: i)).OrderBy(x => x.value).ToArray();
-            double[] ranks = new double[n];
-
-            int i = 0;
-
-            while (i < n)
-            {
-                int j = i;
-
-                while (j < n - 1 && Math.Abs(indexed[j + 1].value - indexed[j].value) < 1e-9)
-                    j++;
-
-                double avgRank = (i + j) / 2.0 + 1;
-
-                for (int k = i; k <= j; k++)
-                    ranks[indexed[k].index] = avgRank;
-
-                i = j + 1;
-            }
-
-            return ranks;
         }
 
         private void setAutobalanceProgress(double progress)

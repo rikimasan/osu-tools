@@ -158,9 +158,9 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 if (selectedParameters.Length == 0)
                 {
                     reporter.Report(dataset_progress_portion, stage: "Evaluating...");
-                    double baseMse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, Array.Empty<double>(), createRuleset, getTargetValue);
+                    var (_, baseRmse, baseSpearman) = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, Array.Empty<double>(), createRuleset, getTargetValue);
                     reporter.Report(1, stage: "Done");
-                    return AutobalanceResult<TTuning>.Success(baseTuning, Math.Sqrt(baseMse), dataset.Count);
+                    return AutobalanceResult<TTuning>.Success(baseTuning, baseRmse, baseSpearman, dataset.Count);
                 }
 
                 int n = selectedParameters.Length;
@@ -202,8 +202,10 @@ namespace PerformanceCalculatorGUI.Screens.Collections
 
                 reporter.Report(dataset_progress_portion, stage: "Optimizing...");
 
-                double currentMse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, currentValues, createRuleset, getTargetValue);
-                double bestMse = currentMse;
+                var (currentLoss, currentRmse, currentSpearman) = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, currentValues, createRuleset, getTargetValue);
+                double bestLoss = currentLoss;
+                double bestRmse = currentRmse;
+                double bestSpearman = currentSpearman;
 
                 var random = new Random(42);
                 double temperature = initial_temperature;
@@ -220,18 +222,20 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                         lowerBounds[paramIndex],
                         upperBounds[paramIndex]);
 
-                    double candidateMse = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, candidateValues, createRuleset, getTargetValue);
+                    var (candidateLoss, candidateRmse, candidateSpearman) = evaluateAutobalance(dataset, selectedParameters, baseTuning, target, candidateValues, createRuleset, getTargetValue);
 
-                    double delta = candidateMse - currentMse;
+                    double delta = candidateLoss - currentLoss;
 
                     if (delta < 0 || random.NextDouble() < Math.Exp(-delta / temperature))
                     {
                         currentValues = candidateValues;
-                        currentMse = candidateMse;
+                        currentLoss = candidateLoss;
 
-                        if (currentMse < bestMse)
+                        if (currentLoss < bestLoss)
                         {
-                            bestMse = currentMse;
+                            bestLoss = currentLoss;
+                            bestRmse = candidateRmse;
+                            bestSpearman = candidateSpearman;
                             Array.Copy(currentValues, bestValues, n);
                         }
                     }
@@ -244,10 +248,9 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 }
 
                 var balancedTuning = applyAutobalanceParameters(baseTuning, selectedParameters, bestValues);
-                double rmse = Math.Sqrt(bestMse);
 
                 reporter.Report(1, stage: "Done");
-                return AutobalanceResult<TTuning>.Success(balancedTuning, rmse, dataset.Count);
+                return AutobalanceResult<TTuning>.Success(balancedTuning, bestRmse, bestSpearman, dataset.Count);
             });
         }
 
@@ -373,10 +376,11 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             return dataset;
         }
 
-        private double evaluateAutobalance<TTuning>(IReadOnlyList<AutobalanceScoreData> dataset, AutobalanceParameter<TTuning>[] parameters,
-                                                    TTuning baseTuning, AutobalanceTarget target, double[] values,
-                                                    Func<TTuning, Ruleset> createRuleset,
-                                                    Func<PerformanceAttributes?, AutobalanceTarget, double?> getTargetValue)
+        private (double loss, double rmse, double spearman) evaluateAutobalance<TTuning>(IReadOnlyList<AutobalanceScoreData> dataset,
+                                                                                      AutobalanceParameter<TTuning>[] parameters,
+                                                                                      TTuning baseTuning, AutobalanceTarget target, double[] values,
+                                                                                      Func<TTuning, Ruleset> createRuleset,
+                                                                                      Func<PerformanceAttributes?, AutobalanceTarget, double?> getTargetValue)
         {
             try
             {
@@ -385,43 +389,63 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 var performanceCalculator = ruleset.CreatePerformanceCalculator();
 
                 if (performanceCalculator == null)
-                    return big_penalty;
+                    return (big_penalty, big_penalty, 0);
+
+                int n = dataset.Count;
+                var computedActuals = new double[n];
+                var valid = new bool[n];
+
+                Parallel.For(0, n, i =>
+                {
+                    var entry = dataset[i];
+                    var difficultyCalculator = ruleset.CreateDifficultyCalculator(entry.Working);
+                    var difficultyAttributes = difficultyCalculator.Calculate(entry.Mods);
+                    var performanceAttributes = performanceCalculator.Calculate(entry.ScoreInfo, difficultyAttributes);
+                    double? actual = getTargetValue(performanceAttributes, target);
+
+                    if (actual != null)
+                    {
+                        computedActuals[i] = actual.Value;
+                        valid[i] = true;
+                    }
+                });
 
                 double weightedErrorSum = 0;
                 double weightSum = 0;
-                object errorLock = new object();
+                int validCount = 0;
+                var actuals = new double[n];
+                var expecteds = new double[n];
 
-                Parallel.ForEach(dataset,
-                    () => (weightedError: 0.0, weight: 0.0),
-                    (entry, _, local) =>
-                    {
-                        var difficultyCalculator = ruleset.CreateDifficultyCalculator(entry.Working);
-                        var difficultyAttributes = difficultyCalculator.Calculate(entry.Mods);
-                        var performanceAttributes = performanceCalculator.Calculate(entry.ScoreInfo, difficultyAttributes);
-                        double? actual = getTargetValue(performanceAttributes, target);
+                for (int i = 0; i < n; i++)
+                {
+                    if (!valid[i])
+                        continue;
 
-                        if (actual == null)
-                            return local;
+                    double actual = computedActuals[i];
+                    double expected = dataset[i].ExpectedValue;
+                    double weight = dataset[i].Weight;
 
-                        double diff = actual.Value - entry.ExpectedValue;
-                        double sq = diff * diff;
+                    double diff = actual - expected;
+                    weightedErrorSum += weight * diff * diff;
+                    weightSum += weight;
 
-                        return (local.weightedError + entry.Weight * sq, local.weight + entry.Weight);
-                    },
-                    local =>
-                    {
-                        lock (errorLock)
-                        {
-                            weightedErrorSum += local.weightedError;
-                            weightSum += local.weight;
-                        }
-                    });
+                    actuals[validCount] = actual;
+                    expecteds[validCount] = expected;
+                    validCount++;
+                }
 
-                return weightSum > 0 ? weightedErrorSum / weightSum : big_penalty;
+                if (validCount == 0 || weightSum <= 0)
+                    return (big_penalty, big_penalty, 0);
+
+                double rmse = Math.Sqrt(weightedErrorSum / weightSum);
+                double spearman = validCount >= 2 ? ComputeSpearmanCorrelation(actuals, expecteds, validCount) : 0;
+                double loss = rmse * (2.0 - spearman);
+
+                return (loss, rmse, spearman);
             }
             catch
             {
-                return big_penalty;
+                return (big_penalty, big_penalty, 0);
             }
         }
 
@@ -511,6 +535,55 @@ namespace PerformanceCalculatorGUI.Screens.Collections
                 AutobalanceTarget.Flashlight => "flashlight",
                 _ => "total"
             };
+        }
+
+        internal static double ComputeSpearmanCorrelation(double[] actual, double[] expected, int count)
+        {
+            if (count < 2)
+                return 0;
+
+            double[] actualRanks = computeRanks(actual, count);
+            double[] expectedRanks = computeRanks(expected, count);
+
+            double sumDSq = 0;
+
+            for (int i = 0; i < count; i++)
+            {
+                double d = actualRanks[i] - expectedRanks[i];
+                sumDSq += d * d;
+            }
+
+            return 1.0 - 6.0 * sumDSq / (count * ((double)count * count - 1));
+        }
+
+        private static double[] computeRanks(double[] values, int count)
+        {
+            var indexed = new (double value, int index)[count];
+
+            for (int i = 0; i < count; i++)
+                indexed[i] = (values[i], i);
+
+            Array.Sort(indexed, (a, b) => a.value.CompareTo(b.value));
+
+            double[] ranks = new double[count];
+            int pos = 0;
+
+            while (pos < count)
+            {
+                int end = pos;
+
+                while (end < count - 1 && Math.Abs(indexed[end + 1].value - indexed[end].value) < 1e-9)
+                    end++;
+
+                double avgRank = (pos + end) / 2.0 + 1;
+
+                for (int k = pos; k <= end; k++)
+                    ranks[indexed[k].index] = avgRank;
+
+                pos = end + 1;
+            }
+
+            return ranks;
         }
     }
 
@@ -636,14 +709,16 @@ namespace PerformanceCalculatorGUI.Screens.Collections
         public bool IsFailure { get; }
         public TTuning? Tuning { get; }
         public double Rmse { get; }
+        public double Spearman { get; }
         public int SampleCount { get; }
         public string? ErrorMessage { get; }
 
-        private AutobalanceResult(TTuning tuning, double rmse, int sampleCount)
+        private AutobalanceResult(TTuning tuning, double rmse, double spearman, int sampleCount)
         {
             IsFailure = false;
             Tuning = tuning;
             Rmse = rmse;
+            Spearman = spearman;
             SampleCount = sampleCount;
             ErrorMessage = null;
         }
@@ -653,11 +728,12 @@ namespace PerformanceCalculatorGUI.Screens.Collections
             IsFailure = true;
             Tuning = default;
             Rmse = 0;
+            Spearman = 0;
             SampleCount = 0;
             ErrorMessage = errorMessage;
         }
 
-        public static AutobalanceResult<TTuning> Success(TTuning tuning, double rmse, int sampleCount) => new AutobalanceResult<TTuning>(tuning, rmse, sampleCount);
+        public static AutobalanceResult<TTuning> Success(TTuning tuning, double rmse, double spearman, int sampleCount) => new AutobalanceResult<TTuning>(tuning, rmse, spearman, sampleCount);
         public static AutobalanceResult<TTuning> Failure(string errorMessage) => new AutobalanceResult<TTuning>(errorMessage);
     }
 }
